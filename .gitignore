@@ -1,2 +1,4 @@
 eye_data/
 .venv/
+
+__pycache__
