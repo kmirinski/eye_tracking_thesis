@@ -1,5 +1,3 @@
-
-import argparse
 import os
 import glob
 import struct
@@ -34,7 +32,6 @@ def read_aerdat(filepath):
         file_content = file_content[0:-extra_bits]
 
     event_list = list(struct.unpack('=' + packet_format * num_events, file_content))
-    event_list.reverse()
 
     return event_list 
 
@@ -43,37 +40,37 @@ class EyeDataset:
         self.data_dir = data_dir
         self.subject = subject
 
-        self.frame_stack = []
-        self.event_stack = []
+        self.frame_list = []
+        self.event_list = []
 
     def __len__(self):
-        return len(self.frame_stack) + len(self.event_stack)
+        return len(self.frame_list) + len(self.event_list)
 
 
     def __get_item__(self, index):
-        frame_timestamp = self.frame_stack[-1].timestamp
-        event_timestamp = self.event_stack[-4]
+        frame_timestamp = self.frame_list[-1].timestamp
+        event_timestamp = self.event_list[-4]
 
         if event_timestamp < frame_timestamp:
-            polarity = self.event_stack.pop()
-            row = self.event_stack.pop()
-            col = self.event_stack.pop()
-            timestamp = self.event_stack.pop()
+            polarity = self.event_list.pop()
+            row = self.event_list.pop()
+            col = self.event_list.pop()
+            timestamp = self.event_list.pop()
             event = Event(polarity, row, col, timestamp)
             return event
         else:
-            frame = self.frame_stack.pop()
+            frame = self.frame_list.pop()
             img = Image.open(frame.img).convert("L")
             frame = frame._replace(img=img)
             return frame
     
     def collect_data(self, eye=0):
         print('Loading Frames...')
-        self.frame_stack = self.load_frame_data(eye)
-        print('Number of frames: ' + str(len(self.frame_stack)))
+        self.frame_list = self.load_frame_data(eye)
+        print('Number of frames: ' + str(len(self.frame_list)))
         print('Loading Events...')
-        self.event_stack = self.load_event_data(eye)
-        print('Number of events: ' + str(len(self.event_stack) // 4))
+        self.event_list = self.load_event_data(eye)
+        print('Number of events: ' + str(len(self.event_list) // 4))
     
     def load_frame_data(self, eye):
         frame_list = []
@@ -81,7 +78,7 @@ class EyeDataset:
         img_dir = os.path.join(self.data_dir, subject_name, str(eye), 'frames')
         img_filepaths = list(glob_imgs(img_dir))
         img_filepaths.sort(key=lambda path: get_path_info(path)['index'])
-        img_filepaths.reverse()
+        
         for fpath in img_filepaths:
             path_info = get_path_info(fpath)
             frame = Frame(path_info['row'], path_info['col'], fpath, path_info['timestamp'])
