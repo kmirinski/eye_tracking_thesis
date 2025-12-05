@@ -3,6 +3,7 @@ import os
 import matplotlib.pyplot as plt
 
 from preprocessing.accumulator import accumulate_events
+from preprocessing.denoise import filter_noise
 from data.loaders import EyeDataset, Event
 from typing import List, Any
 
@@ -15,7 +16,7 @@ parser.add_argument('--data_dir', default=os.path.join(os.getcwd(), 'eye_data'),
                     help='absolute path to eye_data/, assumes same parent dir as this script by default')
 opt = parser.parse_args()
 
-def test_plot(event_params: List[Any]):
+def plot_on_axis(event_params: List[Any], ax, title):
     negative_x, negative_y = [], []
     positive_x, positive_y = [], []
     
@@ -23,7 +24,6 @@ def test_plot(event_params: List[Any]):
         polarity = event_params[i]
         row = event_params[i + 1]
         col = event_params[i + 2]
-        # timestamp = event_params[i + 3]  # if needed
         
         if polarity == 0:
             negative_x.append(col)
@@ -31,19 +31,17 @@ def test_plot(event_params: List[Any]):
         else:
             positive_x.append(col)
             positive_y.append(row)
-
-    plt.figure(figsize=(10, 8), dpi=200)
-    plt.scatter(negative_x, negative_y, c='red', s=1, label='Polarity 0', alpha=0.6)
-    plt.scatter(positive_x, positive_y, c='green', s=1, label='Polarity 1', alpha=0.6)
-    plt.xlabel('Column (x)')
-    plt.xlim(0, 346)
-    plt.ylabel('Row (y)')
-    plt.ylim(0, 260)
-    plt.title('Event Camera Data')
-    plt.legend()
-    plt.gca().invert_yaxis()
-    plt.grid(True, alpha=0.3)
-    plt.show()
+    
+    ax.scatter(negative_x, negative_y, c='red', s=12, label='Polarity 0', alpha=0.5)
+    ax.scatter(positive_x, positive_y, c='green', s=12, label='Polarity 1', alpha=0.5)
+    ax.set_xlabel('Column (x)')
+    ax.set_xlim(0, 346)
+    ax.set_ylabel('Row (y)')
+    ax.set_ylim(0, 260)
+    ax.set_title(title)
+    ax.legend()
+    ax.invert_yaxis()
+    ax.grid(True, alpha=0.3)
 
 
 
@@ -53,9 +51,19 @@ def main():
     print('Loading data from ' + opt.data_dir)
     eye_dataset.collect_data(eye=0)
     event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
-    # test_plot(event_sets['all_polarity'][0])
-    # test_plot(event_sets['negative_polarity'][0])
-    # test_plot(event_sets['positive_polarity'][0])
+    negative = event_sets['negative_polarity']
+    positive = event_sets['positive_polarity']
+    combined = event_sets['combined_polarity']
+    negative_denoised = filter_noise(negative, box_size=3, threshold=1) # Must be tweeked a bit
+    positive_denoised = filter_noise(positive, box_size=3, threshold=1) # Can be added to args
+
+    # Just for testing
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
+    plot_on_axis(positive[0], ax1, 'Original Data')
+    plot_on_axis(positive_denoised[0], ax2, 'Denoised Data')
+    plt.tight_layout()
+    plt.show()
+    
     
     
 
