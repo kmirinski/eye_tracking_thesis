@@ -57,12 +57,13 @@ def main():
     negative_denoised = filter_noise(negative, box_size=3, threshold=1) # Must be tweeked a bit
     positive_denoised = filter_noise(positive, box_size=3, threshold=1) # Can be added to args
 
+
     # Just for testing
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
-    plot_on_axis(positive[0], ax1, 'Original Data')
-    plot_on_axis(positive_denoised[0], ax2, 'Denoised Data')
-    plt.tight_layout()
-    plt.show()
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
+    # plot_on_axis(positive[0], ax1, 'Original Data')
+    # plot_on_axis(positive_denoised[0], ax2, 'Denoised Data')
+    # plt.tight_layout()
+    # plt.show()
     
     
     
