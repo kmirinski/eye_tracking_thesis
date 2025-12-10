@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 from preprocessing.accumulator import accumulate_events
 from preprocessing.denoise import filter_noise
+from utils import *
 from data.loaders import EyeDataset, Event
 from typing import List, Any
 
@@ -50,18 +51,30 @@ def main():
     print('Collecting data of the left eye of subject ' + str(opt.subject))
     print('Loading data from ' + opt.data_dir)
     eye_dataset.collect_data(eye=0)
-    event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
-    negative = event_sets['negative_polarity']
-    positive = event_sets['positive_polarity']
-    combined = event_sets['combined_polarity']
-    negative_denoised = filter_noise(negative, box_size=3, threshold=1) # Must be tweeked a bit
-    positive_denoised = filter_noise(positive, box_size=3, threshold=1) # Can be added to args
+    # event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
+    # negative = event_sets['negative_polarity']
+    # positive = event_sets['positive_polarity']
+    # combined = event_sets['combined_polarity']
 
+    # images, metadata = events_to_images(negative)
+    # print(type(images))
+    # negative_transformed = images_to_events(images, metadata)
+
+    # Export this test to the notebook
+    # assert len(negative) == len(negative_transformed), f"Number of event sets does not match"
+    # for i in range(len(negative)):
+    #     assert len(negative[i]) == len(negative_transformed[i]), f"Number of events within set {i} does not match"
+    #     for j in range(len(negative[i])):
+    #         assert negative[i][j] == negative_transformed[i][j], f"Elements do not match: {negative[i][j]}, {negative_transformed[i][j]}, {i}, {j}"
+
+    # negative_denoised = filter_noise(negative, box_size=6, threshold=4) # Must be tweeked a bit
+    # positive_denoised = filter_noise(positive, box_size=6, threshold=4) # Can be added to args
+    # combined_denoised = filter_noise(combined, box_size=6, threshold=4)
 
     # Just for testing
     # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
-    # plot_on_axis(positive[0], ax1, 'Original Data')
-    # plot_on_axis(positive_denoised[0], ax2, 'Denoised Data')
+    # plot_on_axis(combined[500], ax1, 'Original Data')
+    # plot_on_axis(combined_denoised[500], ax2, 'Denoised Data')
     # plt.tight_layout()
     # plt.show()
     

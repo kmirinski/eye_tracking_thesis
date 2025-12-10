@@ -1,5 +1,6 @@
 import numpy as np
-from scipy.ndimage import convolve
+from collections import defaultdict
+from scipy.ndimage import convolve, binary_dilation
 from typing import List, Any
 
 def filter_noise(events: List[List[Any]], img_width=346, img_height=260, box_size=2, threshold=2):
