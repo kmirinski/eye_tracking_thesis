@@ -13,36 +13,33 @@ def timer(name="Operation"):
     print(f"{name}: {elapsed_ms:.2f} ms")
 
 
-def events_to_images(events: List[List[Any]], img_width=346, img_height=260):
+def events_to_images(events: np.ndarray, img_width=346, img_height=260):
     """
     Convert event list to images and preserve metadata.
 
     Returns:
-        images: List of numpy arrays (one per event set)
+        images: Numpy array containing all the images (one image per event set)
         metadata: List of dictionaries with coordiante mappings (one per event set)
     """
+    n_sets = events.shape[0]
+    images = np.zeros((n_sets, img_height, img_width))
+    metadata = [None] * n_sets
 
-    images = []
-    metadata = []
+    for i in range(n_sets):
+        event_set = events[i]
+        rows = event_set[:, 1].astype(int)
+        cols = event_set[:, 2].astype(int)
+        np.add.at(images[i], (rows, cols), 1)
 
-    for event_set in events:
-        image = np.zeros((img_height, img_width))
         event_map = defaultdict(list)
-
-        for i in range(0, len(event_set), 4):
-            polarity = event_set[i]
-            row = event_set[i + 1]
-            col = event_set[i + 2]
-            timestamp = event_set[i + 3]
-            image[row, col] += 1
-            event_map[(row, col)].append((polarity, timestamp, i))
+        for j, (polarity, row, col, timestamp) in enumerate(event_set):
+            event_map[(int(row), int(col))].append((polarity, timestamp, j))
         
-        images.append(image)
-        metadata.append(dict(event_map))
+        metadata[i] = dict(event_map)
     
     return images, metadata
 
-def images_to_events(images: List[np.ndarray], metadata: List[dict]):
+def images_to_events(images: np.ndarray, metadata: List[dict]):
     """
     Convert images back to event format.
     The initial sequence is preserved by sorting by the timestamps.
@@ -50,6 +47,17 @@ def images_to_events(images: List[np.ndarray], metadata: List[dict]):
     Returns:
         events: List of events
     """
+
+    n_sets = images.shape[0]
+
+    max_events = max(
+        sum(len(event_list) for event_list in meta.values())
+        for meta in metadata
+    )
+
+    
+
+
     events = []
 
     for image, meta in zip(images, metadata):

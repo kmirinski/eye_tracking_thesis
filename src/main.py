@@ -57,7 +57,9 @@ def main():
     negative = event_sets['negative_polarity']
     positive = event_sets['positive_polarity']
     combined = event_sets['combined_polarity']
-
+    neg_counts = event_sets['negative_counts']
+    pos_counts = event_sets['positive_counts']
+    
     # negative_denoised = filter_noise(negative, box_size=6, threshold=4) # Must be tweeked a bit
     # positive_denoised = filter_noise(positive, box_size=6, threshold=4) # Can be added to args
     # combined_denoised = filter_noise(combined, box_size=6, threshold=4)
