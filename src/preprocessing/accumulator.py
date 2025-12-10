@@ -1,8 +1,5 @@
 import numpy as np
 
-from typing import List, Any
-from data.loaders import EyeDataset, Event
-
 def accumulate_events(events: np.ndarray, n_events=2000):
     n_complete_sets = len(events) // n_events
     events = events[:n_complete_sets * n_events]

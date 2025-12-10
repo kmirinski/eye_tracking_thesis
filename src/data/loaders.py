@@ -1,7 +1,9 @@
 import os
 import glob
 import struct
+
 import numpy as np
+
 from collections import namedtuple
 from PIL import Image
 
