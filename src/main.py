@@ -17,24 +17,21 @@ parser.add_argument('--data_dir', default=os.path.join(os.getcwd(), 'eye_data'),
                     help='absolute path to eye_data/, assumes same parent dir as this script by default')
 opt = parser.parse_args()
 
-def plot_on_axis(event_params: List[Any], ax, title):
-    negative_x, negative_y = [], []
-    positive_x, positive_y = [], []
+
+### FIX THIS SHIT PLS
+def plot_on_axis(image: np.ndarray, polarities: np.ndarray, ax, title):
+
+    rows, cols = np.where(image > 0)
+    pols = image[rows, cols]
+
+    neg_mask = pols == 0
+    pos_mask = pols == 1
     
-    for i in range(0, len(event_params), 4):
-        polarity = event_params[i]
-        row = event_params[i + 1]
-        col = event_params[i + 2]
-        
-        if polarity == 0:
-            negative_x.append(col)
-            negative_y.append(row)
-        else:
-            positive_x.append(col)
-            positive_y.append(row)
+    if neg_mask.any():
+        ax.scatter(cols[neg_mask], rows[neg_mask], c='red', s=12, label='Polarity 0', alpha=0.5)
+    if pos_mask.any():
+        ax.scatter(cols[pos_mask], rows[pos_mask], c='green', s=12, label='Polarity 1', alpha=0.5)
     
-    ax.scatter(negative_x, negative_y, c='red', s=12, label='Polarity 0', alpha=0.5)
-    ax.scatter(positive_x, positive_y, c='green', s=12, label='Polarity 1', alpha=0.5)
     ax.set_xlabel('Column (x)')
     ax.set_xlim(0, 346)
     ax.set_ylabel('Row (y)')
@@ -54,22 +51,32 @@ def main():
         eye_dataset.collect_data(eye=0)
         event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
     
-    negative = event_sets['negative_polarity']
-    positive = event_sets['positive_polarity']
-    combined = event_sets['combined_polarity']
     neg_counts = event_sets['negative_counts']
-    pos_counts = event_sets['positive_counts']
+    # return {
+    #     'combined_polarity': event_sets,
+    #     'negative_polarity': neg_polarity,
+    #     'positive_polarity': pos_polarity,
+    #     'negative_counts': neg_counts,
+    #     'positive_counts': pos_counts
+    # }
+    imgs, p = events_to_images(event_sets['combined_polarity'], counts=neg_counts)
+    imgs_neg, polarities = events_to_images(event_sets['negative_polarity'], counts=neg_counts)
     
+
+
+
+    
+
     # negative_denoised = filter_noise(negative, box_size=6, threshold=4) # Must be tweeked a bit
     # positive_denoised = filter_noise(positive, box_size=6, threshold=4) # Can be added to args
     # combined_denoised = filter_noise(combined, box_size=6, threshold=4)
 
     # Just for testing
-    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
-    # plot_on_axis(combined[500], ax1, 'Original Data')
-    # plot_on_axis(combined_denoised[500], ax2, 'Denoised Data')
-    # plt.tight_layout()
-    # plt.show()
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
+    plot_on_axis(imgs[0], p, ax1, 'Original Data')
+    plot_on_axis(imgs[0], p, ax2, 'Denoised Data')
+    plt.tight_layout()
+    plt.show()
     
     
     
