@@ -1,7 +1,17 @@
 import numpy as np
+import time
 
+from contextlib import contextmanager
 from typing import List, Any
 from collections import defaultdict
+
+@contextmanager
+def timer(name="Operation"):
+    start = time.perf_counter()
+    yield
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    print(f"{name}: {elapsed_ms:.2f} ms")
+
 
 def events_to_images(events: List[List[Any]], img_width=346, img_height=260):
     """
