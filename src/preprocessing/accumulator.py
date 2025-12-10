@@ -3,29 +3,15 @@ import numpy as np
 from typing import List, Any
 from data.loaders import EyeDataset, Event
 
-def accumulate_events(event_params: List[Any], n_events=2000):
-    params_per_set = n_events * 4
-    n_complete_sets = len(event_params) // params_per_set
-    combined_polarity = []
-    negative_polarity = []
-    positive_polarity = []
+def accumulate_events(events: np.ndarray, n_events=2000):
+    n_complete_sets = len(events) // n_events
+    events = events[:n_complete_sets * n_events]
 
-    for i in range(0, n_complete_sets * params_per_set, params_per_set):
-        event_set = event_params[i:i + params_per_set]
+    event_sets = events.reshape(n_complete_sets, n_events, 4)
 
-        negative_polarity_set = []
-        positive_polarity_set = []
-        
-        for j in range(0, params_per_set, 4):
-            polarity = event_set[j]
-            if polarity == 0:
-                negative_polarity_set.extend(event_set[j:j+4])
-            else:
-                positive_polarity_set.extend(event_set[j:j+4]) # No need to keep polarity if it is already in the set
-        
-        combined_polarity.append(event_set)
-        negative_polarity.append(negative_polarity_set)
-        positive_polarity.append(positive_polarity_set)
+    combined_polarity = event_sets
+    negative_polarity = [event_sets[i][event_sets[i, :, 0] == 0] for i in range(n_complete_sets)]
+    positive_polarity = [event_sets[i][event_sets[i, :, 0] == 1] for i in range(n_complete_sets)]
 
     return {
         'combined_polarity': combined_polarity, 

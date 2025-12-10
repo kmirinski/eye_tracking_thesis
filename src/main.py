@@ -50,11 +50,13 @@ def main():
     eye_dataset = EyeDataset(opt.data_dir, opt.subject)
     print('Collecting data of the left eye of subject ' + str(opt.subject))
     print('Loading data from ' + opt.data_dir)
-    eye_dataset.collect_data(eye=0)
-    # event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
-    # negative = event_sets['negative_polarity']
-    # positive = event_sets['positive_polarity']
-    # combined = event_sets['combined_polarity']
+    with timer("Collection + Accumulation"):
+        eye_dataset.collect_data(eye=0)
+        event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
+    
+    negative = event_sets['negative_polarity']
+    positive = event_sets['positive_polarity']
+    combined = event_sets['combined_polarity']
 
     # images, metadata = events_to_images(negative)
     # print(type(images))
