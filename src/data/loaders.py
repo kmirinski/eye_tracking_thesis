@@ -1,7 +1,9 @@
 import os
 import glob
 import struct
+
 import numpy as np
+
 from collections import namedtuple
 from PIL import Image
 
@@ -34,7 +36,9 @@ def read_aerdat(filepath):
 
     event_list = list(struct.unpack('=' + packet_format * num_events, file_content))
 
-    return event_list 
+    events = np.array(event_list, dtype=np.uint32).reshape(-1, 4)
+
+    return events
 
 class EyeDataset:
     def __init__(self, data_dir, subject):
@@ -42,7 +46,7 @@ class EyeDataset:
         self.subject = subject
 
         self.frame_list = []
-        self.event_list = []
+        self.event_list = None
 
     def __len__(self):
         return len(self.frame_list) + len(self.event_list)
@@ -71,7 +75,7 @@ class EyeDataset:
         print('Number of frames: ' + str(len(self.frame_list)))
         print('Loading Events...')
         self.event_list = self.load_event_data(eye)
-        print('Number of events: ' + str(len(self.event_list) // 4))
+        print('Number of events: ' + str(len(self.event_list)))
     
     def load_frame_data(self, eye):
         frame_list = []

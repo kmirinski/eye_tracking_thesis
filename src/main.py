@@ -1,12 +1,12 @@
 import argparse
 import os
 import matplotlib.pyplot as plt
+import numpy as np
 
 from preprocessing.accumulator import accumulate_events
-from preprocessing.denoise import filter_noise
+from preprocessing.denoise import box_filter_events
 from utils import *
-from data.loaders import EyeDataset, Event
-from typing import List, Any
+from data.loaders import EyeDataset
 
 
 parser = argparse.ArgumentParser(description='Arguments for reading the data')
@@ -17,28 +17,34 @@ parser.add_argument('--data_dir', default=os.path.join(os.getcwd(), 'eye_data'),
                     help='absolute path to eye_data/, assumes same parent dir as this script by default')
 opt = parser.parse_args()
 
-def plot_on_axis(event_params: List[Any], ax, title):
-    negative_x, negative_y = [], []
-    positive_x, positive_y = [], []
+
+def plot_event_set(event_set: np.ndarray, ax, title, img_width=346, img_height=260):
+    """
+    Plot a single event set.
     
-    for i in range(0, len(event_params), 4):
-        polarity = event_params[i]
-        row = event_params[i + 1]
-        col = event_params[i + 2]
-        
-        if polarity == 0:
-            negative_x.append(col)
-            negative_y.append(row)
-        else:
-            positive_x.append(col)
-            positive_y.append(row)
+    Args:
+        event_set: Event set (n_events, 4) with [polarity, row, col, timestamp]
+        ax: Matplotlib axis
+        title: Plot title
+        img_width: Width of the image frame
+        img_height: Height of the image frame
+    """
+    pols = event_set[:, 0]
+    rows = event_set[:, 1]
+    cols = event_set[:, 2]
+
+    neg_mask = pols == 0
+    pos_mask = pols == 1
     
-    ax.scatter(negative_x, negative_y, c='red', s=12, label='Polarity 0', alpha=0.5)
-    ax.scatter(positive_x, positive_y, c='green', s=12, label='Polarity 1', alpha=0.5)
+    if neg_mask.any():
+        ax.scatter(cols[neg_mask], rows[neg_mask], c='red', s=12, label='Polarity 0', alpha=0.5)
+    if pos_mask.any():
+        ax.scatter(cols[pos_mask], rows[pos_mask], c='green', s=12, label='Polarity 1', alpha=0.5)
+    
     ax.set_xlabel('Column (x)')
-    ax.set_xlim(0, 346)
+    ax.set_xlim(0, img_width)
     ax.set_ylabel('Row (y)')
-    ax.set_ylim(0, 260)
+    ax.set_ylim(0, img_height)
     ax.set_title(title)
     ax.legend()
     ax.invert_yaxis()
@@ -50,34 +56,20 @@ def main():
     eye_dataset = EyeDataset(opt.data_dir, opt.subject)
     print('Collecting data of the left eye of subject ' + str(opt.subject))
     print('Loading data from ' + opt.data_dir)
-    eye_dataset.collect_data(eye=0)
-    # event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
-    # negative = event_sets['negative_polarity']
-    # positive = event_sets['positive_polarity']
-    # combined = event_sets['combined_polarity']
-
-    # images, metadata = events_to_images(negative)
-    # print(type(images))
-    # negative_transformed = images_to_events(images, metadata)
-
-    # Export this test to the notebook
-    # assert len(negative) == len(negative_transformed), f"Number of event sets does not match"
-    # for i in range(len(negative)):
-    #     assert len(negative[i]) == len(negative_transformed[i]), f"Number of events within set {i} does not match"
-    #     for j in range(len(negative[i])):
-    #         assert negative[i][j] == negative_transformed[i][j], f"Elements do not match: {negative[i][j]}, {negative_transformed[i][j]}, {i}, {j}"
-
-    # negative_denoised = filter_noise(negative, box_size=6, threshold=4) # Must be tweeked a bit
-    # positive_denoised = filter_noise(positive, box_size=6, threshold=4) # Can be added to args
-    # combined_denoised = filter_noise(combined, box_size=6, threshold=4)
-
-    # Just for testing
-    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
-    # plot_on_axis(combined[500], ax1, 'Original Data')
-    # plot_on_axis(combined_denoised[500], ax2, 'Denoised Data')
-    # plt.tight_layout()
-    # plt.show()
+    with timer("Collection + Accumulation"):
+        eye_dataset.collect_data(eye=0)
+        event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
     
+    sets = event_sets['combined_polarity']
+
+    filtered = box_filter_events(sets[0], box_size=6, threshold=4)
+
+     # Just for testing
+    _, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
+    plot_event_set(sets[0], ax1, 'Original Data')
+    plot_event_set(filtered, ax2, 'Denoised Data')
+    plt.tight_layout()
+    plt.show()
     
     
 
