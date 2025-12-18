@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from processing.preprocessing import *
-from processing.denoise import box_filter_events
+from processing.denoise import denoise_image, create_eyelid_glint_mask
 from data.plot import plot_event_set, plot_event_image
 from utils import *
 from data.loaders import EyeDataset
@@ -36,20 +36,31 @@ def main():
         neg_sets = extract_polarity_sets(event_sets, 0)
         pos_sets = extract_polarity_sets(event_sets, 1)
 
-    with timer("Filtering Positive + Negative"):
-        neg_filtered = box_filter_events(neg_sets, box_size=6, threshold=4)
-        pos_filtered = box_filter_events(pos_sets, box_size=6, threshold=4)
+    img_neg = event_to_image(neg_sets[0])
+    img_pos = event_to_image(pos_sets[0])
 
-    # Plotting
-    _, axes = plt.subplots(2, 2, figsize=(15, 10), dpi=200)
-    ax1, ax2, ax3, ax4 = axes.flatten()
+    filtered_neg, mask_neg = denoise_image(img_neg)
+    filtered_pos, mask_pos = denoise_image(img_pos)
 
-    plot_event_set(pos_sets[0], ax1, 'Original Data')
-    plot_event_set(pos_filtered[0], ax2, 'Denoised Data')
-    plot_event_set(neg_sets[0], ax3, 'Original Data')
-    plot_event_set(neg_filtered[0], ax4, 'Denoised Data')
+    mask = create_eyelid_glint_mask(filtered_neg, filtered_pos, dilation_size=5)
+
+    # Apply to remove eyelids and glints from your images
+    dilated_neg = filtered_neg * (~mask)
+    dilated_pos = filtered_pos * (~mask)
+
+    _, axes = plt.subplots(2, 3, figsize=(16, 8), dpi=200)
+    plot_event_image(img_neg, axes[0][0], 'Original Image')
+    plot_event_image(filtered_neg, axes[0][1], 'Filtered Image')
+    plot_event_image(dilated_neg, axes[0][2], 'Dilated Image')
+    # plot_event_image(mask_neg.astype(np.uint8), axes[0][2], 'Mask')
+    plot_event_image(img_pos, axes[1][0], 'Original Image')
+    plot_event_image(filtered_pos, axes[1][1], 'Filtered Image')
+    plot_event_image(dilated_pos, axes[1][2], 'Dilated Image')
+    # plot_event_image(mask_pos.astype(np.uint8), axes[1][2], 'Mask')
+
     plt.tight_layout()
     plt.show()
+
     
     
 
