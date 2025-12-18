@@ -43,8 +43,6 @@ def box_filter_events(event_sets: List[np.ndarray], box_size=6, threshold=4,
 
     return filtered_sets
 
-def 
-
 
 
 
