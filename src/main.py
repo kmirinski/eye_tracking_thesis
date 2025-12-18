@@ -70,9 +70,13 @@ def main():
         pos_filtered = box_filter_events(pos_sets, box_size=6, threshold=4)
 
      # Just for testing
-    _, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
-    plot_event_set(pos_sets[0], ax1, 'Original Data')
-    plot_event_set(pos_filtered[0], ax2, 'Denoised Data')
+    _, axes = plt.subplots(2, 2, figsize=(15, 10), dpi=200)
+    ax1, ax2, ax3, ax4 = axes.flatten()
+
+    plot_event_set(pos_sets[50], ax1, 'Original Data')
+    plot_event_set(pos_filtered[50], ax2, 'Denoised Data')
+    plot_event_set(neg_sets[50], ax3, 'Original Data')
+    plot_event_set(neg_filtered[50], ax4, 'Denoised Data')
     plt.tight_layout()
     plt.show()
     
