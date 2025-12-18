@@ -5,6 +5,4 @@ def accumulate_events(events: np.ndarray, n_events=2000):
     events = events[:n_complete_sets * n_events]
     event_sets = events.reshape(n_complete_sets, n_events, 4)
 
-    return {
-        'combined_polarity': event_sets,
-    }
+    return event_sets
