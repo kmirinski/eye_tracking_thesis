@@ -1,0 +1,35 @@
+import numpy as np
+
+
+
+def plot_event_set(event_set: np.ndarray, ax, title, img_width=346, img_height=260):
+    """
+    Plot a single event set.
+    
+    Args:
+        event_set: Event set (n_events, 4) with [polarity, row, col, timestamp]
+        ax: Matplotlib axis
+        title: Plot title
+        img_width: Width of the image frame
+        img_height: Height of the image frame
+    """
+    pols = event_set[:, 0]
+    rows = event_set[:, 1]
+    cols = event_set[:, 2]
+
+    neg_mask = pols == 0
+    pos_mask = pols == 1
+    
+    if neg_mask.any():
+        ax.scatter(cols[neg_mask], rows[neg_mask], c='red', s=12, label='Polarity 0', alpha=0.5)
+    if pos_mask.any():
+        ax.scatter(cols[pos_mask], rows[pos_mask], c='green', s=12, label='Polarity 1', alpha=0.5)
+    
+    ax.set_xlabel('Column (x)')
+    ax.set_xlim(0, img_width)
+    ax.set_ylabel('Row (y)')
+    ax.set_ylim(0, img_height)
+    ax.set_title(title)
+    ax.legend()
+    ax.invert_yaxis()
+    ax.grid(True, alpha=0.3)
