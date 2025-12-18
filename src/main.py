@@ -3,9 +3,9 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-from preprocessing.accumulator import accumulate_events, extract_polarity_sets
-from preprocessing.denoise import box_filter_events
-from data.plot import plot_event_set
+from processing.preprocessing import *
+from processing.denoise import box_filter_events
+from data.plot import plot_event_set, plot_event_image
 from utils import *
 from data.loaders import EyeDataset
 
@@ -35,19 +35,19 @@ def main():
     with timer("Positive + Negative"):
         neg_sets = extract_polarity_sets(event_sets, 0)
         pos_sets = extract_polarity_sets(event_sets, 1)
-    
+
     with timer("Filtering Positive + Negative"):
         neg_filtered = box_filter_events(neg_sets, box_size=6, threshold=4)
         pos_filtered = box_filter_events(pos_sets, box_size=6, threshold=4)
 
-     # Just for testing
+    # Plotting
     _, axes = plt.subplots(2, 2, figsize=(15, 10), dpi=200)
     ax1, ax2, ax3, ax4 = axes.flatten()
 
-    plot_event_set(pos_sets[50], ax1, 'Original Data')
-    plot_event_set(pos_filtered[50], ax2, 'Denoised Data')
-    plot_event_set(neg_sets[50], ax3, 'Original Data')
-    plot_event_set(neg_filtered[50], ax4, 'Denoised Data')
+    plot_event_set(pos_sets[0], ax1, 'Original Data')
+    plot_event_set(pos_filtered[0], ax2, 'Denoised Data')
+    plot_event_set(neg_sets[0], ax3, 'Original Data')
+    plot_event_set(neg_filtered[0], ax4, 'Denoised Data')
     plt.tight_layout()
     plt.show()
     

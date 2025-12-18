@@ -16,3 +16,10 @@ def extract_polarity_sets(event_sets: np.ndarray, polarity: int):
         polarity_events.append(event_sets[i][mask]) 
 
     return polarity_events
+
+def event_to_image(event_set: np.ndarray, event_resolution=(260, 346)):
+    img = np.zeros(event_resolution, dtype=np.uint8)
+    rows = event_set[:, 1].astype(int)
+    cols = event_set[:, 2].astype(int)
+    np.add.at(img, (rows, cols), 1)
+    return img
