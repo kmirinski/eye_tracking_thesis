@@ -3,7 +3,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-from preprocessing.accumulator import accumulate_events
+from preprocessing.accumulator import accumulate_events, extract_polarity_sets
 from preprocessing.denoise import box_filter_events
 from utils import *
 from data.loaders import EyeDataset
@@ -56,16 +56,23 @@ def main():
     eye_dataset = EyeDataset(opt.data_dir, opt.subject)
     print('Collecting data of the left eye of subject ' + str(opt.subject))
     print('Loading data from ' + opt.data_dir)
+    
     with timer("Collection + Accumulation"):
         eye_dataset.collect_data(eye=0)
         event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
 
-    filtered = box_filter_events(event_sets[0], box_size=6, threshold=4)
+    with timer("Positive + Negative"):
+        neg_sets = extract_polarity_sets(event_sets, 0)
+        pos_sets = extract_polarity_sets(event_sets, 1)
+    
+    with timer("Filtering Positive + Negative"):
+        neg_filtered = box_filter_events(neg_sets, box_size=6, threshold=4)
+        pos_filtered = box_filter_events(pos_sets, box_size=6, threshold=4)
 
      # Just for testing
     _, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8), dpi=200)
-    plot_event_set(event_sets[0], ax1, 'Original Data')
-    plot_event_set(filtered, ax2, 'Denoised Data')
+    plot_event_set(pos_sets[0], ax1, 'Original Data')
+    plot_event_set(pos_filtered[0], ax2, 'Denoised Data')
     plt.tight_layout()
     plt.show()
     
