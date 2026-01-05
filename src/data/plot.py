@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 
@@ -51,5 +52,13 @@ def plot_event_image(img: np.ndarray,ax , title, img_width=346, img_height=260):
     ax.set_title(title)
     ax.invert_yaxis()
     ax.grid(True, alpha=0.3)
+
+def plot_axes(rows: int, cols: int, images: list[tuple]):
+    _, axes = plt.subplots(rows, cols, figsize=(16, 8), dpi=200)
+    axes = axes.flatten() if rows * cols > 1 else [axes]
+
+    for idx, (img, title) in enumerate(images):
+        plot_event_image(img, axes[idx], title)
+
 
     

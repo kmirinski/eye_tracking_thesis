@@ -5,7 +5,7 @@ import numpy as np
 
 from processing.preprocessing import *
 from processing.denoise import denoise_image, create_eyelid_glint_mask
-from data.plot import plot_event_set, plot_event_image
+from data.plot import *
 from utils import *
 from data.loaders import EyeDataset
 
@@ -48,18 +48,21 @@ def main():
     dilated_neg = filtered_neg * (~mask)
     dilated_pos = filtered_pos * (~mask)
 
-    _, axes = plt.subplots(2, 3, figsize=(16, 8), dpi=200)
-    plot_event_image(img_neg, axes[0][0], 'Original Image')
-    plot_event_image(filtered_neg, axes[0][1], 'Filtered Image')
-    plot_event_image(dilated_neg, axes[0][2], 'Dilated Image')
-    # plot_event_image(mask_neg.astype(np.uint8), axes[0][2], 'Mask')
-    plot_event_image(img_pos, axes[1][0], 'Original Image')
-    plot_event_image(filtered_pos, axes[1][1], 'Filtered Image')
-    plot_event_image(dilated_pos, axes[1][2], 'Dilated Image')
-    # plot_event_image(mask_pos.astype(np.uint8), axes[1][2], 'Mask')
+    images = [
+        (img_neg, 'Original Image'),
+        (filtered_neg, 'Filtered Image'),
+        (dilated_neg, 'Dilated Image'),
+        (img_pos, 'Original Image'),
+        (filtered_pos, 'Filtered Image'),
+        (dilated_pos, 'Dilated Image'),
+    ]
 
+    plot_axes(2, 3, images)
     plt.tight_layout()
     plt.show()
+
+
+    
 
     
     
