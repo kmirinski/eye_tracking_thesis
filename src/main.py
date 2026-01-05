@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from processing.preprocessing import *
-from processing.denoise import denoise_image, create_eyelid_glint_mask
+from processing.filtering import denoise_image, create_eyelid_glint_mask
 from data.plot import *
 from utils import *
 from data.loaders import EyeDataset
@@ -38,6 +38,7 @@ def main():
 
     img_neg = event_to_image(neg_sets[0])
     img_pos = event_to_image(pos_sets[0])
+    img = event_to_image(event_sets[0])
 
     filtered_neg, mask_neg = denoise_image(img_neg)
     filtered_pos, mask_pos = denoise_image(img_pos)
