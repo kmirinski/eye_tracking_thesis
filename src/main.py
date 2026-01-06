@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from processing.preprocessing import *
-from processing.filtering import denoise_image, create_eyelid_glint_mask, generate_eyelash_mask
+from processing.filtering import *
 from data.plot import *
 from utils import *
 from data.loaders import EyeDataset
@@ -40,7 +40,19 @@ def main():
     img_pos = event_to_image(pos_sets[0])
     img = event_to_image(event_sets[0])
 
-    eyelash_mask = generate_eyelash_mask(img, np.zeros((260, 346)))
+    filtered_neg_img, filtered_pos_img = remove_noise(img_neg, img_pos)    
+    # noise_images = [
+    #     (img_neg, 'Original Image'),
+    #     (filtered_neg_img, 'Filtered Image'),
+    #     (img_pos, 'Original Image'),
+    #     (filtered_pos_img, 'Filtered Image'),
+    # ]
+    # plot_axes(2, 2, noise_images)
+    eyelid_glint_mask = generate_eyelid_glint_mask(filtered_neg_img, filtered_pos_img)
+    # plot_event_image_standalone(eyelid_glint_mask, "Eyelid Glint Mask")
+
+    eyelash_mask = generate_eyelash_mask(img, eyelid_glint_mask)
+    # plot_event_image_standalone(eyelash_mask, "Eyelash Mask")
 
     filtered_neg, mask_neg = denoise_image(img_neg)
     filtered_pos, mask_pos = denoise_image(img_pos)
