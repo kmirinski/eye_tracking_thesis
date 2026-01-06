@@ -36,36 +36,32 @@ def main():
     img_pos = event_to_image(pos_sets[0])
     img = event_to_image(event_sets[0])
 
-    filtered_neg_img, filtered_pos_img = remove_noise(img_neg, img_pos)    
+    filtered_img_neg, filtered_img_pos = remove_noise(img_neg, img_pos)    
     # noise_images = [
     #     (img_neg, 'Original Image'),
-    #     (filtered_neg_img, 'Filtered Image'),
+    #     (filtered_img_neg, 'Filtered Image'),
     #     (img_pos, 'Original Image'),
-    #     (filtered_pos_img, 'Filtered Image'),
+    #     (filtered_img_pos, 'Filtered Image'),
     # ]
     # plot_axes(2, 2, noise_images)
-    eyelid_glint_mask = generate_eyelid_glint_mask(filtered_neg_img, filtered_pos_img)
+    eyelid_glint_mask = generate_eyelid_glint_mask(filtered_img_neg, filtered_img_pos)
     # plot_event_image_standalone(eyelid_glint_mask, "Eyelid Glint Mask")
 
     eyelash_mask = generate_eyelash_mask(img, eyelid_glint_mask)
     # plot_event_image_standalone(eyelash_mask, "Eyelash Mask")
 
-    filtered_neg, mask_neg = denoise_image(img_neg)
-    filtered_pos, mask_pos = denoise_image(img_pos)
-
-    mask = create_eyelid_glint_mask(filtered_neg, filtered_pos, dilation_size=5)
-
     # Apply to remove eyelids and glints from your images
-    dilated_neg = filtered_neg * (~mask)
-    dilated_pos = filtered_pos * (~mask)
+    pupil_iris_mask = generate_pupil_iris_mask(eyelid_glint_mask, eyelash_mask)
+
+    pupil_iris = apply_mask(img, pupil_iris_mask, keep_masked=True)
 
     images = [
-        (img_neg, 'Original Image'),
-        (filtered_neg, 'Filtered Image'),
-        (dilated_neg, 'Dilated Image'),
-        (img_pos, 'Original Image'),
-        (filtered_pos, 'Filtered Image'),
-        (eyelash_mask, 'Eyelash mask'),
+        (img_neg, 'Original Negative Image'),
+        (filtered_img_neg, 'Filtered Negative Image'),
+        (eyelash_mask, 'Eyelash Mask'),
+        (img_pos, 'Original Positive Image'),
+        (filtered_img_pos, 'Filtered Positive Image'),
+        (pupil_iris, 'Pupil and Iris'),
     ]
 
     plot_axes(2, 3, images)

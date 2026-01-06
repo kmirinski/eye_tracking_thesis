@@ -1,32 +1,13 @@
 import numpy as np
 import cv2
 
-from data.plot import plot_event_image, plot_event_image_standalone, plot_axes
+from data.plot import plot_event_image_standalone, plot_axes
 from typing import List
-from scipy.ndimage import uniform_filter, binary_dilation, label, median_filter
-
-def denoise_image(image: np.ndarray, box_size=6 , threshold=4):
-    neighbourhood_sum = uniform_filter(image.astype(np.float32), size=box_size, mode='constant') * (box_size ** 2)
-    keep_mask = neighbourhood_sum >= threshold
-    removed_mask = image * (~keep_mask)
-    filtered_image = np.where(keep_mask, image, 0).astype(image.dtype)
-    return filtered_image, removed_mask
-
-def create_eyelid_glint_mask(image_neg: np.ndarray, image_pos: np.ndarray, dilation_size=3):
-    struct_elem = np.ones((dilation_size, dilation_size), dtype=bool)
-    negative_dilated = binary_dilation(image_neg > 0, structure=struct_elem)
-    positive_dilated = binary_dilation(image_pos > 0, structure=struct_elem)
-
-    overlap = positive_dilated & negative_dilated
-
-    eyelid_glint_mask = binary_dilation(overlap, structure=struct_elem)
-    
-    return eyelid_glint_mask
+from scipy.ndimage import label, median_filter
 
 
 def remove_noise(img_neg: np.ndarray, img_pos: np.ndarray, threshold: float = 0.09, kernel_size: int = 6) -> tuple[np.ndarray, np.ndarray]:
     kernel = np.ones((kernel_size, kernel_size), dtype=np.float32) / (kernel_size ** 2)
-    print(kernel)
 
     neg_filtered = cv2.filter2D(img_neg.astype(np.float32), -1, kernel)
     pos_filtered = cv2.filter2D(img_pos.astype(np.float32), -1, kernel)
@@ -107,7 +88,7 @@ def generate_eyelash_mask(img: np.ndarray, eyelid_glint_mask: np.ndarray) -> np.
 
     # plot_event_image_standalone(morph_mask, "E")
     union_mask = np.logical_or(eyelid_glint_mask, morph_mask).astype(np.uint8)
-    plot_event_image_standalone(union_mask, "D")
+
     return union_mask
     # plot_event_image_standalone(union_mask, "F")
     combined_mask = np.logical_and(union_mask, blur_mask).astype(np.uint8)
@@ -124,6 +105,23 @@ def generate_eyelash_mask(img: np.ndarray, eyelid_glint_mask: np.ndarray) -> np.
     eyelash_mask = (labeled_mask == largest_blob_label).astype(np.uint8)
 
     return eyelash_mask
+
+def generate_pupil_iris_mask(eyelid_glint_mask: np.ndarray, eyelash_mask: np.ndarray) -> np.ndarray:
+    unified_mask = np.logical_or(eyelid_glint_mask, eyelash_mask)
+
+    pupil_iris_mask = np.logical_not(unified_mask).astype(np.uint8)
+    
+    return pupil_iris_mask
+
+def apply_mask(img: np.ndarray, mask: np.ndarray, keep_masked: bool = False) -> np.ndarray:
+    filtered_img = img.copy()
+    
+    if keep_masked:
+        filtered_img[mask == 0] = 0
+    else:
+        filtered_img[mask == 1] = 0
+    
+    return filtered_img
 
 
 
