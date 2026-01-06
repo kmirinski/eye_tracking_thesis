@@ -5,9 +5,23 @@ from data.plot import plot_event_image_standalone, plot_axes
 from typing import List
 from scipy.ndimage import label, median_filter
 
+def generate_noise_mask(img_neg: np.ndarray, img_pos: np.ndarray, threshold: float = 0.09, kernel_size: int = 6) -> np.ndarray:
+    kernel = np.ones((kernel_size, kernel_size), dtype=np.float32) / (kernel_size ** 2)
+    print(kernel)
+
+    neg_filtered = cv2.filter2D(img_neg.astype(np.float32), -1, kernel)
+    pos_filtered = cv2.filter2D(img_pos.astype(np.float32), -1, kernel)
+
+    neg_noise = (img_neg > 0) & (neg_filtered < threshold)
+    pos_noise = (img_pos > 0) & (pos_filtered < threshold)
+
+    noise_mask = np.logical_or(neg_noise, pos_noise).astype(np.uint8)
+    
+    return noise_mask
 
 def remove_noise(img_neg: np.ndarray, img_pos: np.ndarray, threshold: float = 0.09, kernel_size: int = 6) -> tuple[np.ndarray, np.ndarray]:
     kernel = np.ones((kernel_size, kernel_size), dtype=np.float32) / (kernel_size ** 2)
+    print(kernel)
 
     neg_filtered = cv2.filter2D(img_neg.astype(np.float32), -1, kernel)
     pos_filtered = cv2.filter2D(img_pos.astype(np.float32), -1, kernel)
@@ -106,8 +120,11 @@ def generate_eyelash_mask(img: np.ndarray, eyelid_glint_mask: np.ndarray) -> np.
 
     return eyelash_mask
 
-def generate_pupil_iris_mask(eyelid_glint_mask: np.ndarray, eyelash_mask: np.ndarray) -> np.ndarray:
-    unified_mask = np.logical_or(eyelid_glint_mask, eyelash_mask)
+def generate_pupil_iris_mask(noise_mask:np.ndarray, eyelid_glint_mask: np.ndarray, eyelash_mask: np.ndarray) -> np.ndarray:
+    unified_mask = np.logical_or(noise_mask, eyelid_glint_mask)
+    plot_event_image_standalone(unified_mask, "Noise or eyelid_glint mask")
+    unified_mask = np.logical_or(unified_mask, eyelash_mask)
+    plot_event_image_standalone(unified_mask, "Noise or eyelid_glint mask")
 
     pupil_iris_mask = np.logical_not(unified_mask).astype(np.uint8)
     

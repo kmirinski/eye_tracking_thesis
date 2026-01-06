@@ -36,22 +36,16 @@ def main():
     img_pos = event_to_image(pos_sets[0])
     img = event_to_image(event_sets[0])
 
-    filtered_img_neg, filtered_img_pos = remove_noise(img_neg, img_pos)    
-    # noise_images = [
-    #     (img_neg, 'Original Image'),
-    #     (filtered_img_neg, 'Filtered Image'),
-    #     (img_pos, 'Original Image'),
-    #     (filtered_img_pos, 'Filtered Image'),
-    # ]
-    # plot_axes(2, 2, noise_images)
+    filtered_img_neg, filtered_img_pos = remove_noise(img_neg, img_pos)
+    noise_mask = generate_noise_mask(img_neg, img_pos)
+
     eyelid_glint_mask = generate_eyelid_glint_mask(filtered_img_neg, filtered_img_pos)
     # plot_event_image_standalone(eyelid_glint_mask, "Eyelid Glint Mask")
 
     eyelash_mask = generate_eyelash_mask(img, eyelid_glint_mask)
     # plot_event_image_standalone(eyelash_mask, "Eyelash Mask")
 
-    # Apply to remove eyelids and glints from your images
-    pupil_iris_mask = generate_pupil_iris_mask(eyelid_glint_mask, eyelash_mask)
+    pupil_iris_mask = generate_pupil_iris_mask(noise_mask, eyelid_glint_mask, eyelash_mask)
 
     pupil_iris = apply_mask(img, pupil_iris_mask, keep_masked=True)
 
