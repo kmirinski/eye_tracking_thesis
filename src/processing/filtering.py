@@ -37,7 +37,10 @@ def remove_noise(img_neg: np.ndarray, img_pos: np.ndarray, threshold: float = 0.
     return img_neg_denoised, img_pos_denoised
 
 
-def generate_eyelid_glint_mask(img_neg_filtered: np.ndarray, img_pos_filtered: np.ndarray) -> np.ndarray:
+def generate_eyelid_glint_mask(img_neg_filtered: np.ndarray, img_pos_filtered: np.ndarray, noise_mask: np.ndarray) -> np.ndarray:
+    img_neg_filtered = apply_mask(img_neg_filtered, noise_mask)
+    img_pos_filtered = apply_mask(img_pos_filtered, noise_mask)
+    
     neg_binary = (img_neg_filtered > 0).astype(np.uint8)
     pos_binary = (img_pos_filtered > 0).astype(np.uint8)
 
