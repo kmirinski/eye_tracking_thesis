@@ -2,10 +2,11 @@ import argparse
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+import random
 
 from processing.preprocessing import *
-from processing.denoise import denoise_image, create_eyelid_glint_mask
-from data.plot import plot_event_set, plot_event_image
+from processing.filtering import *
+from data.plot import *
 from utils import *
 from data.loaders import EyeDataset
 
@@ -17,10 +18,6 @@ parser.add_argument('--eye', default='left', choices=['left', 'right'],
 parser.add_argument('--data_dir', default=os.path.join(os.getcwd(), 'eye_data'),
                     help='absolute path to eye_data/, assumes same parent dir as this script by default')
 opt = parser.parse_args()
-
-
-
-
 
 
 def main():
@@ -36,30 +33,36 @@ def main():
         neg_sets = extract_polarity_sets(event_sets, 0)
         pos_sets = extract_polarity_sets(event_sets, 1)
 
-    img_neg = event_to_image(neg_sets[0])
-    img_pos = event_to_image(pos_sets[0])
 
-    filtered_neg, mask_neg = denoise_image(img_neg)
-    filtered_pos, mask_pos = denoise_image(img_pos)
+    img_idxs = random.sample(range(1, len(event_sets) + 1), 6)
+    images = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
 
-    mask = create_eyelid_glint_mask(filtered_neg, filtered_pos, dilation_size=5)
-
-    # Apply to remove eyelids and glints from your images
-    dilated_neg = filtered_neg * (~mask)
-    dilated_pos = filtered_pos * (~mask)
-
-    _, axes = plt.subplots(2, 3, figsize=(16, 8), dpi=200)
-    plot_event_image(img_neg, axes[0][0], 'Original Image')
-    plot_event_image(filtered_neg, axes[0][1], 'Filtered Image')
-    plot_event_image(dilated_neg, axes[0][2], 'Dilated Image')
-    # plot_event_image(mask_neg.astype(np.uint8), axes[0][2], 'Mask')
-    plot_event_image(img_pos, axes[1][0], 'Original Image')
-    plot_event_image(filtered_pos, axes[1][1], 'Filtered Image')
-    plot_event_image(dilated_pos, axes[1][2], 'Dilated Image')
-    # plot_event_image(mask_pos.astype(np.uint8), axes[1][2], 'Mask')
-
+    plot_axes(2, 3, images)
     plt.tight_layout()
     plt.show()
+
+
+def generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs):
+
+    images = []
+
+    for i in img_idxs:
+        img_neg = event_to_image(neg_sets[i])
+        img_pos = event_to_image(pos_sets[i])
+        img = event_to_image(event_sets[i])
+
+        noise_mask = generate_noise_mask(img_neg, img_pos)
+        eyelid_glint_mask = generate_eyelid_glint_mask(img_neg, img_pos, noise_mask)
+        eyelash_mask = generate_eyelash_mask(img, eyelid_glint_mask)
+        pupil_iris_mask = generate_pupil_iris_mask(noise_mask, eyelid_glint_mask, eyelash_mask)
+
+        pupil_iris = apply_mask(img, pupil_iris_mask, keep_masked=True)
+
+        images.append((pupil_iris, f"Image {i}"))
+
+    return images
+
+    
 
     
     
