@@ -77,7 +77,7 @@ def plot_event_image_standalone(img: np.ndarray, title, img_width=346, img_heigh
     plt.show()
 
 def plot_axes(rows: int, cols: int, images: list[tuple]):
-    _, axes = plt.subplots(rows, cols, figsize=(16, 8), dpi=200)
+    _, axes = plt.subplots(rows, cols, figsize=(20, 10), dpi=200)
     axes = axes.flatten() if rows * cols > 1 else [axes]
 
     for idx, (img, title) in enumerate(images):

@@ -1,9 +1,9 @@
 import numpy as np
 import cv2
 
-from data.plot import plot_event_image, plot_event_image_standalone
+from data.plot import plot_event_image, plot_event_image_standalone, plot_axes
 from typing import List
-from scipy.ndimage import uniform_filter, binary_dilation, label
+from scipy.ndimage import uniform_filter, binary_dilation, label, median_filter
 
 def denoise_image(image: np.ndarray, box_size=6 , threshold=4):
     neighbourhood_sum = uniform_filter(image.astype(np.float32), size=box_size, mode='constant') * (box_size ** 2)
@@ -42,9 +42,6 @@ def remove_noise(img_neg: np.ndarray, img_pos: np.ndarray, threshold: float = 0.
     return img_neg_denoised, img_pos_denoised
 
 
-
-
-
 def generate_eyelid_glint_mask(img_neg_filtered: np.ndarray, img_pos_filtered: np.ndarray) -> np.ndarray:
     neg_binary = (img_neg_filtered > 0).astype(np.uint8)
     pos_binary = (img_pos_filtered > 0).astype(np.uint8)
@@ -62,9 +59,32 @@ def generate_eyelid_glint_mask(img_neg_filtered: np.ndarray, img_pos_filtered: n
     return eyelid_glint_mask
 
 
-
 def generate_eyelash_mask(img: np.ndarray, eyelid_glint_mask: np.ndarray) -> np.ndarray:
-    blur_mask = cv2.medianBlur(img, ksize=3) # may need to adjust
+    # blur_mask = cv2.medianBlur(img, ksize=3) # may need to 
+
+    # blur_mask = median_filter(img, size=(2, 4))  # (height, width)
+    size = (1, 2)
+    blur_mask_1 = img.copy()
+    blur_mask_1 = median_filter(blur_mask_1, size=size)  # (height, width)
+    
+    blur_mask_5 = img.copy()
+    for i in range(5):
+        # blur_mask = cv2.medianBlur(blur_mask, ksize=3)
+        blur_mask_5 = median_filter(blur_mask_5, size=size)  # (height, width)
+
+    blur_mask_15 = img.copy()
+    for i in range(15):
+        # blur_mask = cv2.medianBlur(blur_mask, ksize=3)
+        blur_mask_15 = median_filter(blur_mask_15, size=size)  # (height, width)
+    blur_mask = blur_mask_15
+    
+    # noise_images = [
+    #     (blur_mask_1, 'Blur mask 1'),
+    #     (blur_mask_5, 'Blur mask 5'),
+    #     (blur_mask_15, 'Blur mask 15'),
+    #     # (filtered_pos_img, 'Filtered Image'),
+    # ]
+    # plot_axes(1, 3, noise_images)
     
     if blur_mask.max() > 1:
         _, blur_mask = cv2.threshold(blur_mask, 0, 1, cv2.THRESH_BINARY)
@@ -81,13 +101,14 @@ def generate_eyelash_mask(img: np.ndarray, eyelid_glint_mask: np.ndarray) -> np.
     # plot_event_image_standalone(morph_mask, "C")
 
     morph_mask = cv2.morphologyEx(morph_mask, cv2.MORPH_OPEN, kernel_disk)
-    # plot_event_image_standalone(morph_mask, "D")
 
     if morph_mask.max() > 1:
         _, morph_mask = cv2.threshold(morph_mask, 0, 1, cv2.THRESH_BINARY)
 
     # plot_event_image_standalone(morph_mask, "E")
     union_mask = np.logical_or(eyelid_glint_mask, morph_mask).astype(np.uint8)
+    plot_event_image_standalone(union_mask, "D")
+    return union_mask
     # plot_event_image_standalone(union_mask, "F")
     combined_mask = np.logical_and(union_mask, blur_mask).astype(np.uint8)
     # plot_event_image_standalone(combined_mask, "G")

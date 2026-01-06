@@ -19,10 +19,6 @@ parser.add_argument('--data_dir', default=os.path.join(os.getcwd(), 'eye_data'),
 opt = parser.parse_args()
 
 
-
-
-
-
 def main():
     eye_dataset = EyeDataset(opt.data_dir, opt.subject)
     print('Collecting data of the left eye of subject ' + str(opt.subject))
