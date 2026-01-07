@@ -34,7 +34,7 @@ def main():
         pos_sets = extract_polarity_sets(event_sets, 1)
 
 
-    img_idxs = random.sample(range(1, len(event_sets) + 1), 6)
+    img_idxs = random.sample(range(1, len(event_sets) + 1), 3)
     images = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
 
     plot_axes(2, 3, images)
@@ -44,9 +44,10 @@ def main():
 
 def generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs):
 
-    images = []
+    n = len(img_idxs)
+    images = [None] * (2 * n)
 
-    for i in img_idxs:
+    for idx, i in enumerate(img_idxs):
         img_neg = event_to_image(neg_sets[i])
         img_pos = event_to_image(pos_sets[i])
         img = event_to_image(event_sets[i])
@@ -58,13 +59,11 @@ def generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs):
 
         pupil_iris = apply_mask(img, pupil_iris_mask, keep_masked=True)
 
-        images.append((pupil_iris, f"Image {i}"))
+        images[idx] = (img, f"Image {i}")
+        images[n + idx] = (pupil_iris, f"Image {i} extracted") 
 
     return images
 
-    
-
-    
     
 
 if __name__ == '__main__':
