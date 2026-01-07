@@ -88,6 +88,16 @@ def apply_mask(img: np.ndarray, mask: np.ndarray, keep_masked: bool = False) -> 
     
     return filtered_img
 
+def generate_and_apply_masks(img_neg, img_pos, img):
+    noise_mask = generate_noise_mask(img_neg, img_pos)
+    eyelid_glint_mask = generate_eyelid_glint_mask(img_neg, img_pos, noise_mask)
+    eyelash_mask = generate_eyelash_mask(img, eyelid_glint_mask)
+    pupil_iris_mask = generate_pupil_iris_mask(noise_mask, eyelid_glint_mask, eyelash_mask)
+    pupil_iris = apply_mask(img, pupil_iris_mask, keep_masked=True)
+
+    return pupil_iris
+
+
 
 
 

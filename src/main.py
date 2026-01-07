@@ -6,6 +6,7 @@ import random
 
 from processing.preprocessing import *
 from processing.filtering import *
+from processing.pupil_finding import *
 from data.plot import *
 from utils import *
 from data.loaders import EyeDataset
@@ -34,8 +35,11 @@ def main():
         pos_sets = extract_polarity_sets(event_sets, 1)
 
 
+    # img_idxs = random.sample(range(1, len(event_sets) + 1), 2)
+    # img_idxs.append(0)
     img_idxs = random.sample(range(1, len(event_sets) + 1), 3)
-    images = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
+    images, centers = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
+    print(centers)
 
     plot_axes(2, 3, images)
     plt.tight_layout()
@@ -43,27 +47,22 @@ def main():
 
 
 def generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs):
-
     n = len(img_idxs)
     images = [None] * (2 * n)
+    centers = [None] * n
 
     for idx, i in enumerate(img_idxs):
         img_neg = event_to_image(neg_sets[i])
         img_pos = event_to_image(pos_sets[i])
         img = event_to_image(event_sets[i])
-
-        noise_mask = generate_noise_mask(img_neg, img_pos)
-        eyelid_glint_mask = generate_eyelid_glint_mask(img_neg, img_pos, noise_mask)
-        eyelash_mask = generate_eyelash_mask(img, eyelid_glint_mask)
-        pupil_iris_mask = generate_pupil_iris_mask(noise_mask, eyelid_glint_mask, eyelash_mask)
-
-        pupil_iris = apply_mask(img, pupil_iris_mask, keep_masked=True)
+        pupil_iris = generate_and_apply_masks(img_neg, img_pos, img)
+        center_x, center_y, _ = locate_pupil_center_kde(pupil_iris)
 
         images[idx] = (img, f"Image {i}")
         images[n + idx] = (pupil_iris, f"Image {i} extracted") 
+        centers[idx] = (center_x, center_y) 
 
-    return images
-
+    return images, centers
     
 
 if __name__ == '__main__':
