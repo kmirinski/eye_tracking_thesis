@@ -39,9 +39,9 @@ def main():
     # img_idxs.append(0)
     img_idxs = random.sample(range(1, len(event_sets) + 1), 3)
     images, centers = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
-    print(centers)
+    # print(centers)
 
-    plot_axes(2, 3, images)
+    plot_axes(2, 3, images, centers)
     plt.tight_layout()
     plt.show()
 
