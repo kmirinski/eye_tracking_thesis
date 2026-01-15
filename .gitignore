@@ -2,3 +2,4 @@ eye_data/
 .venv/
 
 __pycache__/
+plots/
