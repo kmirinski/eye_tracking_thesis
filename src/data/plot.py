@@ -76,12 +76,21 @@ def plot_event_image_standalone(img: np.ndarray, title, img_width=346, img_heigh
     plt.tight_layout()
     plt.show()
 
-def plot_axes(rows: int, cols: int, images: list[tuple]):
+def plot_axes(rows: int, cols: int, images: list[tuple], centers: list[tuple]):
     _, axes = plt.subplots(rows, cols, figsize=(20, 10), dpi=200)
-    axes = axes.flatten() if rows * cols > 1 else [axes]
+    axes_flat = axes.flatten() if rows * cols > 1 else [axes]
 
     for idx, (img, title) in enumerate(images):
-        plot_event_image(img, axes[idx], title)
+        ax = axes_flat[idx]
+        plot_event_image(img, ax, title)
+
+        if centers is not None:
+            n = len(centers)
+            center_idx = idx if idx < n else idx - n
+            
+            if center_idx < len(centers) and centers[center_idx] is not None:
+                cx, cy = centers[center_idx]
+                ax.plot(cx, cy, 'r+', markersize=15, markeredgewidth=2)
 
 
     
