@@ -42,7 +42,7 @@ def process_frame(frame: Frame, theta=20, sigma=6, margin=30, visualize=True):
     }
 
     if len(candidate_points) >= 5:
-        ellipse = cv2.fitEllipse(candidate_points_filtered.astype(np.float32))
+        ellipse = cv2.fitEllipse(candidate_points_filtered.astype(np.float32)) 
         result['ellipse'] = ellipse
 
         if visualize:
@@ -51,7 +51,7 @@ def process_frame(frame: Frame, theta=20, sigma=6, margin=30, visualize=True):
         if visualize:
             visualize_detection(img, binary, opened, edges, candidate_points_filtered, None)
 
-    return result
+    return ellipse
 
 def visualize_detection(img, binary, opened, edges, candidate_points, ellipse): 
     import matplotlib.pyplot as plt
@@ -86,7 +86,10 @@ def visualize_detection(img, binary, opened, edges, candidate_points, ellipse):
     img_with_ellipse = img.copy()
     if ellipse is not None:
         # Draw ellipse
-        cv2.ellipse(img_with_ellipse, ellipse, 255, 2)
+        cv2.ellipse(img_with_ellipse, ellipse, 255, 1)
+        roi = ((ellipse[0][0], ellipse[0][1]), (ellipse[1][0] + 5, ellipse[1][1] + 5), ellipse[2])
+        # cv2.ellipse(img_with_ellipse, roi, 255, 1)
+
         # Draw center
         # center = (int(ellipse[0][0]), int(ellipse[0][1]))
         # cv2.circle(img_with_ellipse, center, 3, 200, -1)

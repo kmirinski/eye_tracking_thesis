@@ -9,6 +9,7 @@ from processing.filtering import *
 from data.plot import *
 from utils import *
 from data.loaders import EyeDataset
+from frame_processing.frame_processing import process_frame
 
 
 parser = argparse.ArgumentParser(description='Arguments for reading the data')
@@ -27,19 +28,29 @@ def main():
     
     with timer("Collection + Accumulation"):
         eye_dataset.collect_data(eye=0)
-        event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
+        # event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
+    ellipse = None
+    img_idxs = random.sample(range(1, len(eye_dataset.frame_list) + 1), 1)
+    for idx in img_idxs:
+        # (x, y) (w, h) phi -> x_center, y_center, width, height, clockwise rotation
+        ellipse = process_frame(eye_dataset.frame_list[idx], visualize=True)
 
-    with timer("Positive + Negative"):
-        neg_sets = extract_polarity_sets(event_sets, 0)
-        pos_sets = extract_polarity_sets(event_sets, 1)
+    # This ellipse is the region of interest
+    # Expand the region of interest
+
+    print(ellipse) # 0.04s -> 25Hz (how often we get frames)
+    
+    # with timer("Positive + Negative"):
+    #     neg_sets = extract_polarity_sets(event_sets, 0)
+    #     pos_sets = extract_polarity_sets(event_sets, 1)
 
 
-    img_idxs = random.sample(range(1, len(event_sets) + 1), 3)
-    images = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
+    # img_idxs = random.sample(range(1, len(event_sets) + 1), 3)
+    # images = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
 
-    plot_axes(2, 3, images)
-    plt.tight_layout()
-    plt.show()
+    # plot_axes(2, 3, images)
+    # plt.tight_layout()
+    # plt.show()
 
 
 def generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs):
