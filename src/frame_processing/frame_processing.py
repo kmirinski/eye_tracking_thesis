@@ -42,6 +42,10 @@ def process_frame(frame: Frame, theta=20, sigma=6, margin=30, visualize=True):
     }
 
     if len(candidate_points) >= 5:
+        # print(f"img: {frame.img}, {len(candidate_points_filtered)}")
+        # if len(candidate_points_filtered) < 5:
+        #     ellipse = cv2.fitEllipse(candidate_points.astype(np.float32)) 
+        # else:
         ellipse = cv2.fitEllipse(candidate_points_filtered.astype(np.float32)) 
         result['ellipse'] = ellipse
 

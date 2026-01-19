@@ -75,6 +75,12 @@ class EyeDataset:
             # img = Image.open(frame.img).convert("L")
             # frame = frame._replace(img=img)
             return frame
+        
+    def get_initial_frame(self):
+        while(1):
+            itm = self.__get_item__(0)
+            if type(itm) is Frame:
+                return itm
     
     def collect_data(self, eye=0):
         print('Loading Frames...')
