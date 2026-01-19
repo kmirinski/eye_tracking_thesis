@@ -22,7 +22,7 @@ def get_path_info(path):
     return {'index': int(path_parts[0]), 'row': int(path_parts[1]), 'col': int(path_parts[2]), 
             'stimulus_type': path_parts[3], 'timestamp': int(path_parts[4])}
 
-def read_aerdat(filepath):
+def read_aerdat(filepath, mode):
     with open(filepath, mode='rb') as file:
         file_content = file.read()
     
@@ -35,18 +35,25 @@ def read_aerdat(filepath):
         file_content = file_content[0:-extra_bits]
 
     event_list = list(struct.unpack('=' + packet_format * num_events, file_content))
-
-    events = np.array(event_list, dtype=np.uint32).reshape(-1, 4)
-
-    return events
+    if mode == 'stack':
+        event_list.reverse()
+        return event_list
+    elif mode == 'np':
+        events = np.array(event_list, dtype=np.uint32).reshape(-1, 4)
+        return events
+    else:
+        return event_list
 
 class EyeDataset:
-    def __init__(self, data_dir, subject):
+    def __init__(self, data_dir, subject, mode='stack'):
         self.data_dir = data_dir
         self.subject = subject
+        self.mode = mode
 
         self.frame_list = []
-        self.event_list = None
+
+        self.event_list = None  # Used by np mode
+        self.event_stack = []   # Used by stack mode
 
     def __len__(self):
         return len(self.frame_list) + len(self.event_list)
@@ -74,8 +81,13 @@ class EyeDataset:
         self.frame_list = self.load_frame_data(eye)
         print('Number of frames: ' + str(len(self.frame_list)))
         print('Loading Events...')
-        self.event_list = self.load_event_data(eye)
-        print('Number of events: ' + str(len(self.event_list)))
+        events = self.load_event_data(eye)
+        if self.mode == 'stack':
+            self.event_stack = events
+            print('Number of events: ' + str(int(len(self.event_stack) / 4)))
+        elif self.mode == 'np':
+            self.event_list = events    
+            print('Number of events: ' + str(len(self.event_list)))
     
     def load_frame_data(self, eye):
         frame_list = []
@@ -83,6 +95,9 @@ class EyeDataset:
         img_dir = os.path.join(self.data_dir, subject_name, str(eye), 'frames')
         img_filepaths = list(glob_imgs(img_dir))
         img_filepaths.sort(key=lambda path: get_path_info(path)['index'])
+        
+        if self.mode == 'stack':
+            img_filepaths.reverse()
         
         for fpath in img_filepaths:
             path_info = get_path_info(fpath)
@@ -93,5 +108,5 @@ class EyeDataset:
     def load_event_data(self, eye):
         subject_name = "user" + str(self.subject)
         event_file = os.path.join(self.data_dir, subject_name, str(eye), 'events.aerdat')
-        events_list = read_aerdat(event_file)
+        events_list = read_aerdat(event_file, self.mode)
         return events_list

@@ -23,7 +23,7 @@ opt = parser.parse_args()
 
 
 def main():
-    eye_dataset = EyeDataset(opt.data_dir, opt.subject)
+    eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='np')
     print('Collecting data of the left eye of subject ' + str(opt.subject))
     print('Loading data from ' + opt.data_dir)
     
