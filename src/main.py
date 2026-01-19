@@ -9,7 +9,7 @@ from processing.filtering import *
 from processing.pupil_finding import *
 from data.plot import *
 from utils import *
-from data.loaders import EyeDataset
+from data.loaders import EyeDataset, Frame, Event
 from frame_processing.frame_processing import process_frame
 
 
@@ -23,7 +23,7 @@ opt = parser.parse_args()
 
 
 def main():
-    eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='np')
+    eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
     print('Collecting data of the left eye of subject ' + str(opt.subject))
     print('Loading data from ' + opt.data_dir)
     

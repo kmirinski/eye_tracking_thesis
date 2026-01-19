@@ -59,21 +59,21 @@ class EyeDataset:
         return len(self.frame_list) + len(self.event_list)
 
 
-    def __get_item__(self, index):
+    def __get_item__(self, _):
         frame_timestamp = self.frame_list[-1].timestamp
-        event_timestamp = self.event_list[-4]
+        event_timestamp = self.event_stack[-4]
 
         if event_timestamp < frame_timestamp:
-            polarity = self.event_list.pop()
-            row = self.event_list.pop()
-            col = self.event_list.pop()
-            timestamp = self.event_list.pop()
+            polarity = self.event_stack.pop()
+            row = self.event_stack.pop()
+            col = self.event_stack.pop()
+            timestamp = self.event_stack.pop()
             event = Event(polarity, row, col, timestamp)
             return event
         else:
             frame = self.frame_list.pop()
-            img = Image.open(frame.img).convert("L")
-            frame = frame._replace(img=img)
+            # img = Image.open(frame.img).convert("L")
+            # frame = frame._replace(img=img)
             return frame
     
     def collect_data(self, eye=0):
