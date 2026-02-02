@@ -9,8 +9,9 @@ from processing.filtering import *
 from processing.pupil_finding import *
 from data.plot import *
 from utils import *
-from data.loaders import EyeDataset
+from data.loaders import EyeDataset, Frame, Event
 from frame_processing.frame_processing import process_frame
+from tracking import track_pupil
 
 
 parser = argparse.ArgumentParser(description='Arguments for reading the data')
@@ -23,21 +24,27 @@ opt = parser.parse_args()
 
 
 def main():
-    eye_dataset = EyeDataset(opt.data_dir, opt.subject)
+    eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
     print('Collecting data of the left eye of subject ' + str(opt.subject))
     print('Loading data from ' + opt.data_dir)
     
     with timer("Collection + Accumulation"):
         eye_dataset.collect_data(eye=0)
         # event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
+    
+    
+    # pupil_tracking = track_pupil(eye_dataset, 50)
     ellipse = None
     img_idxs = random.sample(range(1, len(eye_dataset.frame_list) + 1), 1)
+    # There is an image with index -706 in which the subject is shot during a blink, therefore the pupil extraction fails
+    # img_idxs = [-706]
     for idx in img_idxs:
         # (x, y) (w, h) phi -> x_center, y_center, width, height, clockwise rotation
-        ellipse = process_frame(eye_dataset.frame_list[idx], visualize=True)
+        with timer("Process frame"):
+            ellipse = process_frame(eye_dataset.frame_list[idx], visualize=True)
 
-    # This ellipse is the region of interest
-    # Expand the region of interest
+    # # This ellipse is the region of interest
+    # # Expand the region of interest
 
     print(ellipse) # 0.04s -> 25Hz (how often we get frames)
     
