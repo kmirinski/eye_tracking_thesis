@@ -33,14 +33,15 @@ def main():
         # event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
     
     
-    pupil_tracking = track_pupil(eye_dataset, 50)
+    # pupil_tracking = track_pupil(eye_dataset, 50)
     ellipse = None
-    # img_idxs = random.sample(range(1, len(eye_dataset.frame_list) + 1), 1)
+    img_idxs = random.sample(range(1, len(eye_dataset.frame_list) + 1), 1)
     # There is an image with index -706 in which the subject is shot during a blink, therefore the pupil extraction fails
-    img_idxs = [-706]
+    # img_idxs = [-706]
     for idx in img_idxs:
         # (x, y) (w, h) phi -> x_center, y_center, width, height, clockwise rotation
-        ellipse = process_frame(eye_dataset.frame_list[idx], visualize=True)
+        with timer("Process frame"):
+            ellipse = process_frame(eye_dataset.frame_list[idx], visualize=True)
 
     # # This ellipse is the region of interest
     # # Expand the region of interest

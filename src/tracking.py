@@ -1,5 +1,5 @@
 import numpy as np
-from ellipse import LsqEllipse
+from ellipse import LsqEllipse # type: ignore[attr-defined]
 
 from data.loaders import EyeDataset, Frame, Event
 from frame_processing.frame_processing import process_frame
