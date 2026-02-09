@@ -10,7 +10,8 @@ from processing.pupil_finding import *
 from data.plot import *
 from utils import *
 from data.loaders import EyeDataset, Frame, Event
-from frame_processing.frame_processing import process_frame
+from frame_processing.frame_processing import process_frame, extract_pupil_centers
+from gaze_estimator import GazeEstimator
 from tracking import track_pupil
 
 
@@ -32,36 +33,39 @@ def main():
         eye_dataset.collect_data(eye=0)
         # event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
     
+    with timer("Center extraction + Screen coordinates extraction"):
+        pupil_centers = extract_pupil_centers(eye_dataset.frame_list)
+        screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
+
+    gaze_estimator = GazeEstimator()
+    gaze_estimator.fit(pupil_centers, screen_coords)
+    # pupil_tracking = track_pupil(eye_dataset, 50) 
+    # ellipse = None
+    # img_idxs = random.sample(range(1, len(eye_dataset.frame_list) + 1), 5)
+    # for idx in img_idxs:
+    #     # (x, y) (w, h) phi -> x_center, y_center, width, height, clockwise rotation
+    #     with timer("Process frame"):
+    #         ellipse = process_frame(eye_dataset.frame_list[idx], visualize=True)
+
+    # # # This ellipse is the region of interest
+    # # # Expand the region of interest
+
+    # print(ellipse) # 0.04s -> 25Hz (how often we get frames)
     
-    # pupil_tracking = track_pupil(eye_dataset, 50)
-    ellipse = None
-    img_idxs = random.sample(range(1, len(eye_dataset.frame_list) + 1), 1)
-    # There is an image with index -706 in which the subject is shot during a blink, therefore the pupil extraction fails
-    # img_idxs = [-706]
-    for idx in img_idxs:
-        # (x, y) (w, h) phi -> x_center, y_center, width, height, clockwise rotation
-        with timer("Process frame"):
-            ellipse = process_frame(eye_dataset.frame_list[idx], visualize=True)
-
-    # # This ellipse is the region of interest
-    # # Expand the region of interest
-
-    print(ellipse) # 0.04s -> 25Hz (how often we get frames)
-    
-    # with timer("Positive + Negative"):
-    #     neg_sets = extract_polarity_sets(event_sets, 0)
-    #     pos_sets = extract_polarity_sets(event_sets, 1)
+    # # with timer("Positive + Negative"):
+    # #     neg_sets = extract_polarity_sets(event_sets, 0)
+    # #     pos_sets = extract_polarity_sets(event_sets, 1)
 
 
-    # img_idxs = random.sample(range(1, len(event_sets) + 1), 2)
-    # img_idxs.append(0)
-    # img_idxs = random.sample(range(1, len(event_sets) + 1), 3)
-    # images, centers = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
-    # print(centers)
+    # # img_idxs = random.sample(range(1, len(event_sets) + 1), 2)
+    # # img_idxs.append(0)
+    # # img_idxs = random.sample(range(1, len(event_sets) + 1), 3)
+    # # images, centers = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
+    # # print(centers)
 
-    # plot_axes(2, 3, images, centers)
-    # plt.tight_layout()
-    # plt.show()
+    # # plot_axes(2, 3, images, centers)
+    # # plt.tight_layout()
+    # # plt.show()
 
 
 def generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs):

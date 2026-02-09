@@ -14,8 +14,8 @@ class GazeEstimator:
         self.is_fitted = False
 
     def fit(self, pupil_centers, screen_coords):
-        pupil_centers = np.array(pupil_centers)
-        screen_coords = np.array(screen_coords)
+        # pupil_centers = np.array(pupil_centers)
+        # screen_coords = np.array(screen_coords)
 
         N = pupil_centers.shape[0]
         min_samples = (self.degree + 1) * (self.degree * 2) // 2
