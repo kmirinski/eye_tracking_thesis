@@ -4,13 +4,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 
+from sklearn.model_selection import train_test_split
+
 from processing.preprocessing import *
 from processing.filtering import *
 from processing.pupil_finding import *
 from data.plot import *
 from utils import *
-from data.loaders import EyeDataset, Frame, Event
-from frame_processing.frame_processing import process_frame, extract_pupil_centers
+from data.loaders import EyeDataset
+from frame_processing.frame_processing import extract_pupil, extract_pupil_centers
 from gaze_estimator import GazeEstimator
 from tracking import track_pupil
 
@@ -29,43 +31,48 @@ def main():
     print('Collecting data of the left eye of subject ' + str(opt.subject))
     print('Loading data from ' + opt.data_dir)
     
-    with timer("Collection + Accumulation"):
+    with timer("Collection"):
         eye_dataset.collect_data(eye=0)
-        # event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
-    
+
+    # with timer("Accumulation"):
+    #     event_sets = accumulate_events(eye_dataset.event_list, n_events=2000) # Add this to args later (for now hardcoded)
+
     with timer("Center extraction + Screen coordinates extraction"):
         pupil_centers = extract_pupil_centers(eye_dataset.frame_list)
         screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
 
-    gaze_estimator = GazeEstimator()
-    gaze_estimator.fit(pupil_centers, screen_coords)
-    # pupil_tracking = track_pupil(eye_dataset, 50) 
-    # ellipse = None
-    # img_idxs = random.sample(range(1, len(eye_dataset.frame_list) + 1), 5)
-    # for idx in img_idxs:
-    #     # (x, y) (w, h) phi -> x_center, y_center, width, height, clockwise rotation
-    #     with timer("Process frame"):
-    #         ellipse = process_frame(eye_dataset.frame_list[idx], visualize=True)
-
-    # # # This ellipse is the region of interest
-    # # # Expand the region of interest
-
-    # print(ellipse) # 0.04s -> 25Hz (how often we get frames)
+        combined = np.hstack([pupil_centers, screen_coords])
+        valid_mask = ~(np.all(combined[:, :2] < 5, axis=1) | np.all(combined[:, 2:] == 0, axis=1))
+        combined = combined[valid_mask]
     
-    # # with timer("Positive + Negative"):
-    # #     neg_sets = extract_polarity_sets(event_sets, 0)
-    # #     pos_sets = extract_polarity_sets(event_sets, 1)
+    for c in combined:
+        print(c)
 
+    pupil_centers, screen_coords = combined[:, :2], combined[:, 2:]
 
-    # # img_idxs = random.sample(range(1, len(event_sets) + 1), 2)
-    # # img_idxs.append(0)
-    # # img_idxs = random.sample(range(1, len(event_sets) + 1), 3)
-    # # images, centers = generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs)
-    # # print(centers)
+    pupil_train, pupil_test_val, screen_train, screen_test_val = train_test_split(
+        pupil_centers, screen_coords, test_size=0.15, random_state=42
+    ) 
 
-    # # plot_axes(2, 3, images, centers)
-    # # plt.tight_layout()
-    # # plt.show()
+    pupil_test, pupil_val, screen_test, screen_val = train_test_split(
+        pupil_test_val, screen_test_val, test_size=0.5, random_state=42
+    ) 
+
+    print(f"Training set size: {len(pupil_train)}")
+    print(f"Validation set size: {len(pupil_val)}")
+    print(f"Test set size: {len(pupil_test)}")
+
+    for deg in [1, 2, 3, 4, 5]:
+        print(f"\n--- Degree {deg} ---")
+        gaze_estimator = GazeEstimator(degree=deg)
+        
+        # Train on training set
+        gaze_estimator.fit(pupil_train, screen_train)
+        
+        # Evaluate on validation set
+        val_metrics = gaze_estimator.evaluate(pupil_val, screen_val)
+        print(f"Validation RMSE: {val_metrics['rmse']:.2f} pixels")
+        print(f"Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
 
 
 def generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs):

@@ -2,7 +2,7 @@ import numpy as np
 from ellipse import LsqEllipse
 
 from data.loaders import EyeDataset, Frame, Event
-from frame_processing.frame_processing import process_frame
+from frame_processing.frame_processing import extract_pupil
 
 def fit_ellipse(events):
     if len(events) < 5:
@@ -74,7 +74,7 @@ def get_roi_events(events, prev_ellipse, expansion_factor=1.5):
 
 def track_pupil(eye_dataset: EyeDataset, num_events, fit_threshold=0.8):
     initial_frame = eye_dataset.get_initial_frame()
-    prev_ellipse = process_frame(initial_frame, visualize=False)
+    prev_ellipse = extract_pupil(initial_frame, visualize=False)
 
     tracked_ellipses = []
     if prev_ellipse is not None:
@@ -125,7 +125,7 @@ def track_pupil(eye_dataset: EyeDataset, num_events, fit_threshold=0.8):
                 events_buffer = []
 
         elif type(itm) is Frame:
-            frame_ellipse = process_frame(itm, visualize=False)
+            frame_ellipse = extract_pupil(itm, visualize=False)
             if frame_ellipse is not None:
                 tracked_ellipses.append({
                     'ellipse': frame_ellipse,

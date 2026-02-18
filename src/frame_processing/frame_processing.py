@@ -3,7 +3,7 @@ import numpy as np
 from tqdm import tqdm
 from data.loaders import Frame
 
-def process_frame(frame: Frame, theta=20, sigma=6, margin=30, visualize=True):
+def extract_pupil(frame: Frame, theta=20, sigma=6, margin=30, visualize=True):
     img = cv2.imread(frame.img)
     
     if len(img.shape) == 3:
@@ -34,30 +34,21 @@ def process_frame(frame: Frame, theta=20, sigma=6, margin=30, visualize=True):
     else:
         candidate_points_filtered = candidate_points
 
-    result = {
-        'candidate_points': candidate_points_filtered,
-        'binary': binary,
-        'opened': opened,
-        'edges': edges,
-        'ellipse': None
-    }
-
     if len(candidate_points_filtered) >= 5:
         # print(f"img: {frame.img}, {len(candidate_points_filtered)}")
         # if len(candidate_points_filtered) < 5:
         #     ellipse = cv2.fitEllipse(candidate_points.astype(np.float32)) 
         # else:
         ellipse = cv2.fitEllipse(candidate_points_filtered.astype(np.float32)) 
-        result['ellipse'] = ellipse
-
         if visualize:
             visualize_detection(img, binary, opened, edges, candidate_points_filtered, ellipse)
+        return np.array(ellipse[0], dtype=np.int32)
     else:
         if visualize:
             visualize_detection(img, binary, opened, edges, candidate_points_filtered, None)
-        return np.array((-1, -1), dtype=np.float32)
+        return np.array((-1, -1), dtype=np.int32)
 
-    return np.array(ellipse[0], dtype=np.float32)
+    
 
 def visualize_detection(img, binary, opened, edges, candidate_points, ellipse): 
     import matplotlib.pyplot as plt
@@ -115,6 +106,7 @@ def extract_pupil_centers(frame_list):
     n = len(frame_list)
     pupil_centers = np.zeros((n, 2))
     for idx in tqdm(range(1, n)):
-        pupil_centers[idx] = process_frame(frame_list[idx], visualize=False)
+    # for idx in range(1, n):
+        pupil_centers[idx] = extract_pupil(frame_list[idx], visualize=False)
     return pupil_centers
 
