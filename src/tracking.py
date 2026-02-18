@@ -3,6 +3,7 @@ from ellipse import LsqEllipse
 
 from data.loaders import EyeDataset, Frame, Event
 from frame_processing.frame_processing import extract_pupil
+from config import TrackingConfig
 
 def fit_ellipse(events):
     if len(events) < 5:
@@ -72,7 +73,10 @@ def get_roi_events(events, prev_ellipse, expansion_factor=1.5):
 
 
 
-def track_pupil(eye_dataset: EyeDataset, num_events, fit_threshold=0.8):
+def track_pupil(eye_dataset: EyeDataset, config: TrackingConfig = None):
+    if config is None:
+        config = TrackingConfig()
+
     initial_frame = eye_dataset.get_initial_frame()
     prev_ellipse = extract_pupil(initial_frame, visualize=False)
 
@@ -94,9 +98,9 @@ def track_pupil(eye_dataset: EyeDataset, num_events, fit_threshold=0.8):
         if type(itm) is Event:
             events_buffer.append(itm)
 
-            if len(events_buffer) >= num_events:
+            if len(events_buffer) >= config.num_events:
                 if use_roi and prev_ellipse is not None:
-                    roi_events = get_roi_events(events_buffer, prev_ellipse)
+                    roi_events = get_roi_events(events_buffer, prev_ellipse, expansion_factor=config.roi_expansion)
                     if len(roi_events) >= 5:
                         current_ellipse = fit_ellipse(roi_events)
                         fit_score = calculate_fit_score(current_ellipse, events_buffer)
@@ -109,8 +113,8 @@ def track_pupil(eye_dataset: EyeDataset, num_events, fit_threshold=0.8):
                     # First event set or previous fit was bad
                     current_ellipse = fit_ellipse(events_buffer)
                     fit_score = calculate_fit_score(current_ellipse, events_buffer)
-            
-                if fit_score >= fit_threshold and current_ellipse is not None:
+
+                if fit_score >= config.fit_threshold and current_ellipse is not None:
                     tracked_ellipses.append({
                         'ellipse': current_ellipse,
                         'timestamp': events_buffer[-1].timestamp,

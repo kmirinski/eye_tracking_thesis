@@ -2,10 +2,14 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 from data.loaders import Frame
+from config import FrameDetectionConfig
 
-def extract_pupil(frame: Frame, theta=20, sigma=6, margin=30, visualize=True):
+def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=True):
+    if config is None:
+        config = FrameDetectionConfig()
+
     img = cv2.imread(frame.img)
-    
+
     if len(img.shape) == 3:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     else:
@@ -13,22 +17,22 @@ def extract_pupil(frame: Frame, theta=20, sigma=6, margin=30, visualize=True):
 
     height, width = gray.shape
 
-    _, binary = cv2.threshold(gray, theta, 255, cv2.THRESH_BINARY_INV)
+    _, binary = cv2.threshold(gray, config.threshold, 255, cv2.THRESH_BINARY_INV)
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * sigma + 1, 2 * sigma + 1))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * config.morph_kernel_size + 1, 2 * config.morph_kernel_size + 1))
     opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
 
     edges = cv2.Canny(opened, 50, 100)
 
-    candidate_points = np.column_stack(np.where(edges > 0)) 
+    candidate_points = np.column_stack(np.where(edges > 0))
     candidate_points = np.flip(candidate_points, axis=1)
 
     if len(candidate_points) > 0:
         mask = (
-            (candidate_points[:, 0] >= margin) & 
-            (candidate_points[:, 0] < width - margin) &
-            (candidate_points[:, 1] >= margin) & 
-            (candidate_points[:, 1] < height - margin)
+            (candidate_points[:, 0] >= config.edge_margin) &
+            (candidate_points[:, 0] < width - config.edge_margin) &
+            (candidate_points[:, 1] >= config.edge_margin) &
+            (candidate_points[:, 1] < height - config.edge_margin)
         )
         candidate_points_filtered = candidate_points[mask]
     else:
@@ -102,11 +106,11 @@ def visualize_detection(img, binary, opened, edges, candidate_points, ellipse):
     plt.tight_layout()
     plt.show()
 
-def extract_pupil_centers(frame_list):
+def extract_pupil_centers(frame_list, config: FrameDetectionConfig = None):
     n = len(frame_list)
     pupil_centers = np.zeros((n, 2))
     for idx in tqdm(range(1, n)):
     # for idx in range(1, n):
-        pupil_centers[idx] = extract_pupil(frame_list[idx], visualize=False)
+        pupil_centers[idx] = extract_pupil(frame_list[idx], config=config, visualize=False)
     return pupil_centers
 
