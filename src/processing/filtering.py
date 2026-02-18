@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 
-from data.plot import *
+from data.visualization import *
 from scipy.ndimage import label
 
 def generate_noise_mask(img_neg: np.ndarray, img_pos: np.ndarray, threshold: float = 0.21, kernel_size: int = 6) -> np.ndarray:
