@@ -13,6 +13,58 @@ from tracking import PupilTracker
 from config import FrameDetectionConfig, TrackingConfig, KDEConfig, GazeConfig
 
 
+def build_valid_mask(pupil_centers, screen_coords, skip_frames=15):
+    n = len(screen_coords)
+
+    # Work in chronological order (arrays are stored reversed)
+    pupil_chron = pupil_centers[::-1]
+    screen_chron = screen_coords[::-1]
+
+    valid = np.ones(n, dtype=bool)
+    low, high = np.array([100, 80]), np.array([260, 150])
+    valid &= np.all((pupil_chron > low) & (pupil_chron <= high), axis=1)
+    valid &= ~np.all(screen_chron == 0, axis=1)     # zero-coord frames
+
+    non_zero = ~np.all(screen_chron == 0, axis=1)
+
+    # Find contiguous non-zero sections
+    sections = []
+    in_section = False
+    for i in range(n):
+        if non_zero[i] and not in_section:
+            start = i
+            in_section = True
+        elif not non_zero[i] and in_section:
+            sections.append((start, i))
+            in_section = False
+    if in_section:
+        sections.append((start, n))
+
+    # Section 0: saccades — skip first N frames at start and after every target change
+    if len(sections) >= 1:
+        sac_start, sac_end = sections[0]
+        valid[sac_start:sac_start + skip_frames] = False
+        prev = screen_chron[sac_start]
+        for i in range(sac_start + 1, sac_end):
+            if not np.array_equal(screen_chron[i], prev):
+                valid[i:i + skip_frames] = False
+                prev = screen_chron[i]
+
+    # Section 1: smooth pursuit — skip only the first N frames
+    if len(sections) >= 2:
+        sp_start, _ = sections[1]
+        valid[sp_start:sp_start + skip_frames] = False
+
+    removed_basic = n - np.sum(~np.all(pupil_chron < 5, axis=1) | ~np.all(screen_chron == 0, axis=1))
+    removed_total = n - np.sum(valid)
+    print(f"Frames removed (basic filter): {n - np.count_nonzero(~np.all(pupil_chron < 5, axis=1) & ~np.all(screen_chron == 0, axis=1))}")
+    print(f"Frames removed (temporal skip): {removed_total - (n - np.count_nonzero(~np.all(pupil_chron < 5, axis=1) & ~np.all(screen_chron == 0, axis=1)))}")
+    print(f"Frames removed (total): {removed_total} / {n}")
+
+    # Return mask in the original (reversed) array order
+    return valid[::-1]
+
+
 def run_pipeline(opt):
     frame_config = FrameDetectionConfig()
     tracking_config = TrackingConfig()
@@ -30,15 +82,21 @@ def run_pipeline(opt):
     #     event_sets = accumulate_events(eye_dataset.event_list, n_events=tracking_config.num_events)
 
     with timer("Center extraction + Screen coordinates extraction"):
-        pupil_centers = extract_pupil_centers(eye_dataset.frame_list, config=frame_config)
+        pupil_centers, ellipses = extract_pupil_centers(eye_dataset.frame_list, config=frame_config)
         screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
+        write_ellipse_video(eye_dataset.frame_list, ellipses, screen_coords)
 
+        valid_mask = build_valid_mask(pupil_centers, screen_coords, skip_frames=gaze_config.saccade_skip_frames)
+        
+        plot_pupil_centers_over_time_all(pupil_centers, screen_coords, valid_mask)
+        plot_pupil_centers_over_time(pupil_centers, screen_coords, valid_mask)
+        
         combined = np.hstack([pupil_centers, screen_coords])
-        valid_mask = ~(np.all(combined[:, :2] < 5, axis=1) | np.all(combined[:, 2:] == 0, axis=1))
         combined = combined[valid_mask]
+        combined = np.round(combined, 2)
 
-    for c in combined:
-        print(c)
+    # for c in combined:
+    #     print(c)
 
     pupil_centers, screen_coords = combined[:, :2], combined[:, 2:]
 

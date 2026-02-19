@@ -20,6 +20,7 @@ class KDEConfig:
 
 @dataclass
 class GazeConfig:
-    poly_degrees: list = (1, 2, 3, 4, 5)
+    poly_degrees: list = (3, 4, 5, 6, 7, 8, 9, 10)
     train_ratio: float = 0.85
     val_ratio: float = 0.075
+    saccade_skip_frames: int = 15

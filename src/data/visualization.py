@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -75,6 +76,128 @@ def plot_event_image_standalone(img: np.ndarray, title, img_width=346, img_heigh
     
     plt.tight_layout()
     plt.show()
+
+def plot_pupil_centers_over_time_all(pupil_centers, screen_coords, valid_mask=None):
+    pc = pupil_centers[::-1]
+    sc = screen_coords[::-1]
+    mask = valid_mask[::-1] if valid_mask is not None else np.ones(len(pc), dtype=bool)
+
+    t = np.arange(len(pc))
+
+    _, axes = plt.subplots(3, 1, figsize=(20, 12), sharex=True, dpi=150)
+
+    # --- Pupil X ---
+    axes[0].plot(t, pc[:, 0], lw=0.8, color='steelblue', label='pupil x')
+    axes[0].set_ylabel('Pupil X (px)')
+    axes[0].legend(loc='upper right')
+    axes[0].grid(True, alpha=0.3)
+
+    # --- Pupil Y ---
+    axes[1].plot(t, pc[:, 1], lw=0.8, color='tomato', label='pupil y')
+    axes[1].set_ylabel('Pupil Y (px)')
+    axes[1].legend(loc='upper right')
+    axes[1].grid(True, alpha=0.3)
+    
+    # --- Screen target ---
+    axes[2].plot(t, sc[:, 0], lw=0.8, color='green', label='screen row')
+    axes[2].plot(t, sc[:, 1], lw=0.8, color='orange', label='screen col')
+    axes[2].set_ylabel('Screen coord (px)')
+    axes[2].set_xlabel('Frame index (chronological)')
+    axes[2].legend(loc='upper right')
+    axes[2].grid(True, alpha=0.3)
+
+    invalid = ~mask
+    if invalid.any():
+        starts = np.where(np.diff(np.concatenate([[False], invalid, [False]])))[0]
+        for s, e in zip(starts[::2], starts[1::2]):
+            for ax in axes:
+                ax.axvspan(s, e, color='gray', alpha=0.25, linewidth=0)
+
+    plt.suptitle('Pupil centers over time — all frames (grey = filtered out)', fontsize=11)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_pupil_centers_over_time(pupil_centers, screen_coords, valid_mask=None):
+    pc = pupil_centers[::-1]
+    sc = screen_coords[::-1]
+    mask = valid_mask[::-1] if valid_mask is not None else np.ones(len(pc), dtype=bool)
+
+    # Keep only valid frames; use original indices on x-axis so gaps are visible
+    t = np.where(mask)[0]
+    pc = pc[mask]
+    sc = sc[mask]
+
+    _, axes = plt.subplots(3, 1, figsize=(20, 12), sharex=True, dpi=150)
+
+    # --- Pupil X ---
+    axes[0].plot(t, pc[:, 0], lw=0.8, color='steelblue', label='pupil x')
+    axes[0].set_ylabel('Pupil X (px)')
+    axes[0].legend(loc='upper right')
+    axes[0].grid(True, alpha=0.3)
+
+    # --- Pupil Y ---
+    axes[1].plot(t, pc[:, 1], lw=0.8, color='tomato', label='pupil y')
+    axes[1].set_ylabel('Pupil Y (px)')
+    axes[1].legend(loc='upper right')
+    axes[1].grid(True, alpha=0.3)
+
+    # --- Screen target ---
+    axes[2].plot(t, sc[:, 0], lw=0.8, color='green', label='screen row')
+    axes[2].plot(t, sc[:, 1], lw=0.8, color='orange', label='screen col')
+    axes[2].set_ylabel('Screen coord (px)')
+    axes[2].set_xlabel('Frame index (chronological)')
+    axes[2].legend(loc='upper right')
+    axes[2].grid(True, alpha=0.3)
+
+    plt.suptitle('Pupil centers over time (valid frames only)', fontsize=11)
+    plt.tight_layout()
+    plt.show()
+
+
+def write_ellipse_video(frame_list, ellipses, screen_coords, output_path='ellipse_detection.mp4', fps=30):
+    """
+    Write a video of all frames with the fitted ellipse and center drawn 
+    on each frame. Frames with no detection are labelled.
+    """
+    n = len(frame_list)
+
+    # Get frame size
+    sample = cv2.imread(frame_list[1].img)
+    h, w = sample.shape[:2]
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+
+    # Iterate the list backwards
+    for list_idx in range(n - 1, 0, -1):
+        idx = n - 1 - list_idx
+        frame = frame_list[list_idx]
+        ellipse = ellipses[list_idx]
+        sc = screen_coords[list_idx]
+
+        img = cv2.imread(frame.img)
+        if img is None:
+            continue
+
+        if ellipse is not None:
+            cv2.ellipse(img, ellipse, (0, 220, 0), 1)
+            cx, cy = int(ellipse[0][0]), int(ellipse[0][1])
+            cv2.drawMarker(img, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 12, 1)
+        else:
+            cv2.putText(img, 'NO DETECTION', (5, 45),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)
+
+        cv2.putText(img, f'frame {idx}', (5, 14),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
+        cv2.putText(img, f'screen ({int(sc[0])}, {int(sc[1])})', (5, 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
+
+        writer.write(img)
+
+    writer.release()
+    print(f'Video written to {output_path}')
+
 
 def plot_axes(rows: int, cols: int, images: list[tuple], centers: list[tuple]):
     _, axes = plt.subplots(rows, cols, figsize=(20, 10), dpi=200)

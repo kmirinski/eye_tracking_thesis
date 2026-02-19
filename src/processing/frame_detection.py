@@ -46,11 +46,11 @@ def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=T
         ellipse = cv2.fitEllipse(candidate_points_filtered.astype(np.float32)) 
         if visualize:
             visualize_detection(img, binary, opened, edges, candidate_points_filtered, ellipse)
-        return np.array(ellipse[0], dtype=np.int32)
+        return np.array(ellipse[0], dtype=np.float32), ellipse
     else:
         if visualize:
             visualize_detection(img, binary, opened, edges, candidate_points_filtered, None)
-        return np.array((-1, -1), dtype=np.int32)
+        return np.array((-1, -1), dtype=np.float32), None
 
     
 
@@ -109,8 +109,10 @@ def visualize_detection(img, binary, opened, edges, candidate_points, ellipse):
 def extract_pupil_centers(frame_list, config: FrameDetectionConfig = None):
     n = len(frame_list)
     pupil_centers = np.zeros((n, 2))
+    ellipses = [None] * n
     for idx in tqdm(range(1, n)):
-    # for idx in range(1, n):
-        pupil_centers[idx] = extract_pupil(frame_list[idx], config=config, visualize=False)
-    return pupil_centers
+        center, ellipse = extract_pupil(frame_list[idx], config=config, visualize=False)
+        pupil_centers[idx] = center
+        ellipses[idx] = ellipse
+    return pupil_centers, ellipses
 

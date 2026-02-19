@@ -3,3 +3,5 @@ eye_data/
 
 __pycache__/
 plots/
+
+*.mp4
