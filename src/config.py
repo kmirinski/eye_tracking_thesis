@@ -4,7 +4,11 @@ from dataclasses import dataclass
 class FrameDetectionConfig:
     threshold: int = 20
     morph_kernel_size: int = 6
-    edge_margin: int = 30
+    min_aspect_ratio: float = 0.5
+    min_axis_px: int = 0
+    max_axis_px: int = 120
+    center_min: tuple = (0, 70)   # (x_min, y_min) accepted pupil center in px
+    center_max: tuple = (260, 150)  # (x_max, y_max) accepted pupil center in px
 
 @dataclass
 class TrackingConfig:
@@ -23,4 +27,4 @@ class GazeConfig:
     poly_degrees: list = (3, 4, 5, 6, 7, 8, 9, 10)
     train_ratio: float = 0.85
     val_ratio: float = 0.075
-    saccade_skip_frames: int = 15
+    saccade_skip_frames: int = 20

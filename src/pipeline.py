@@ -21,8 +21,7 @@ def build_valid_mask(pupil_centers, screen_coords, skip_frames=15):
     screen_chron = screen_coords[::-1]
 
     valid = np.ones(n, dtype=bool)
-    low, high = np.array([100, 80]), np.array([260, 150])
-    valid &= np.all((pupil_chron > low) & (pupil_chron <= high), axis=1)
+    valid &= ~np.all(pupil_chron == -1, axis=1)     # failed detections
     valid &= ~np.all(screen_chron == 0, axis=1)     # zero-coord frames
 
     non_zero = ~np.all(screen_chron == 0, axis=1)
@@ -88,15 +87,12 @@ def run_pipeline(opt):
 
         valid_mask = build_valid_mask(pupil_centers, screen_coords, skip_frames=gaze_config.saccade_skip_frames)
         
-        plot_pupil_centers_over_time_all(pupil_centers, screen_coords, valid_mask)
-        plot_pupil_centers_over_time(pupil_centers, screen_coords, valid_mask)
+        # plot_pupil_centers_over_time_all(pupil_centers, screen_coords, valid_mask)
+        # plot_pupil_centers_over_time(pupil_centers, screen_coords, valid_mask)
         
         combined = np.hstack([pupil_centers, screen_coords])
         combined = combined[valid_mask]
         combined = np.round(combined, 2)
-
-    # for c in combined:
-    #     print(c)
 
     pupil_centers, screen_coords = combined[:, :2], combined[:, 2:]
 

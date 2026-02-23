@@ -15,46 +15,58 @@ def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=T
     else:
         gray = img
 
-    height, width = gray.shape
-
     _, binary = cv2.threshold(gray, config.threshold, 255, cv2.THRESH_BINARY_INV)
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * config.morph_kernel_size + 1, 2 * config.morph_kernel_size + 1))
     opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
 
-    edges = cv2.Canny(opened, 50, 100)
+    contours, _ = cv2.findContours(opened, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
-    candidate_points = np.column_stack(np.where(edges > 0))
-    candidate_points = np.flip(candidate_points, axis=1)
+    best_ellipse = None
+    best_contour = None
+    best_area = 0
 
-    if len(candidate_points) > 0:
-        mask = (
-            (candidate_points[:, 0] >= config.edge_margin) &
-            (candidate_points[:, 0] < width - config.edge_margin) &
-            (candidate_points[:, 1] >= config.edge_margin) &
-            (candidate_points[:, 1] < height - config.edge_margin)
+    for cnt in contours:
+        if len(cnt) < 5:
+            continue
+
+        ellipse = cv2.fitEllipse(cnt)
+        minor, major = ellipse[1][0], ellipse[1][1]
+        if minor > major:
+            minor, major = major, minor
+        aspect_ratio = minor / major if major > 0 else 0
+
+        cx, cy = ellipse[0]
+        valid = (
+            aspect_ratio >= config.min_aspect_ratio and
+            major >= config.min_axis_px and
+            major <= config.max_axis_px and
+            config.center_min[0] < cx <= config.center_max[0] and
+            config.center_min[1] < cy <= config.center_max[1]
         )
-        candidate_points_filtered = candidate_points[mask]
-    else:
-        candidate_points_filtered = candidate_points
 
-    if len(candidate_points_filtered) >= 5:
-        # print(f"img: {frame.img}, {len(candidate_points_filtered)}")
-        # if len(candidate_points_filtered) < 5:
-        #     ellipse = cv2.fitEllipse(candidate_points.astype(np.float32)) 
-        # else:
-        ellipse = cv2.fitEllipse(candidate_points_filtered.astype(np.float32)) 
-        if visualize:
-            visualize_detection(img, binary, opened, edges, candidate_points_filtered, ellipse)
-        return np.array(ellipse[0], dtype=np.float32), ellipse
+        if valid:
+            area = cv2.contourArea(cnt)
+            if area > best_area:
+                best_ellipse = ellipse
+                best_contour = cnt
+                best_area = area
+
+    contour_img = np.zeros_like(opened)
+    cv2.drawContours(contour_img, contours, -1, 255, 1)
+
+    selected_points = best_contour.reshape(-1, 2) if best_contour is not None else np.zeros((0, 2), dtype=np.int32)
+
+    if visualize:
+        visualize_detection(img, binary, opened, contour_img, selected_points, best_ellipse)
+
+    if best_ellipse is not None:
+        return np.array(best_ellipse[0], dtype=np.float32), best_ellipse
     else:
-        if visualize:
-            visualize_detection(img, binary, opened, edges, candidate_points_filtered, None)
         return np.array((-1, -1), dtype=np.float32), None
 
-    
 
-def visualize_detection(img, binary, opened, edges, candidate_points, ellipse): 
+def visualize_detection(img, binary, opened, contour_img, candidate_points, ellipse):
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
@@ -62,39 +74,32 @@ def visualize_detection(img, binary, opened, edges, candidate_points, ellipse):
     axes[0, 0].imshow(img, cmap='gray')
     axes[0, 0].set_title('Original Image')
     axes[0, 0].axis('off')
-    
+
     # Binarized image
     axes[0, 1].imshow(binary, cmap='gray')
     axes[0, 1].set_title('Binarized (Hθ)')
     axes[0, 1].axis('off')
-    
+
     # After morphological opening
     axes[0, 2].imshow(opened, cmap='gray')
     axes[0, 2].set_title('After Opening (◦ Sσ)')
     axes[0, 2].axis('off')
 
-    axes[1, 0].imshow(edges, cmap='gray')
-    axes[1, 0].set_title('Edge Detection (K)')
+    axes[1, 0].imshow(contour_img, cmap='gray')
+    axes[1, 0].set_title('Contours')
     axes[1, 0].axis('off')
 
     axes[1, 1].imshow(img, cmap='gray')
     if len(candidate_points) > 0:
-        axes[1, 1].scatter(candidate_points[:, 0], candidate_points[:, 1], 
+        axes[1, 1].scatter(candidate_points[:, 0], candidate_points[:, 1],
                           c='red', s=1, alpha=0.5)
-    axes[1, 1].set_title(f'Candidate Points ({len(candidate_points)} points)')
+    axes[1, 1].set_title(f'Selected Contour ({len(candidate_points)} points)')
     axes[1, 1].axis('off')
 
     img_with_ellipse = img.copy()
     if ellipse is not None:
-        # Draw ellipse
         cv2.ellipse(img_with_ellipse, ellipse, 255, 1)
-        roi = ((ellipse[0][0], ellipse[0][1]), (ellipse[1][0] + 5, ellipse[1][1] + 5), ellipse[2])
-        # cv2.ellipse(img_with_ellipse, roi, 255, 1)
 
-        # Draw center
-        # center = (int(ellipse[0][0]), int(ellipse[0][1]))
-        # cv2.circle(img_with_ellipse, center, 3, 200, -1)
-    
     axes[1, 2].imshow(img_with_ellipse, cmap='gray')
     if ellipse is not None:
         center = (int(ellipse[0][0]), int(ellipse[0][1]))
@@ -102,7 +107,7 @@ def visualize_detection(img, binary, opened, edges, candidate_points, ellipse):
     else:
         axes[1, 2].set_title('No Ellipse Fitted')
     axes[1, 2].axis('off')
-    
+
     plt.tight_layout()
     plt.show()
 
@@ -115,4 +120,3 @@ def extract_pupil_centers(frame_list, config: FrameDetectionConfig = None):
         pupil_centers[idx] = center
         ellipses[idx] = ellipse
     return pupil_centers, ellipses
-
