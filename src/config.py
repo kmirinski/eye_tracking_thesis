@@ -3,12 +3,13 @@ from dataclasses import dataclass
 @dataclass
 class FrameDetectionConfig:
     threshold: int = 20
-    morph_kernel_size: int = 6
-    min_aspect_ratio: float = 0.5
+    morph_kernel_size: int = 3
+    min_aspect_ratio: float = 0.37
     min_axis_px: int = 0
     max_axis_px: int = 120
     center_min: tuple = (0, 70)   # (x_min, y_min) accepted pupil center in px
     center_max: tuple = (260, 150)  # (x_max, y_max) accepted pupil center in px
+    min_ellipse_area: float = 210  # π * (w/2) * (h/2) in px²
 
 @dataclass
 class TrackingConfig:

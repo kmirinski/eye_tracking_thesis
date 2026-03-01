@@ -155,6 +155,90 @@ def plot_pupil_centers_over_time(pupil_centers, screen_coords, valid_mask=None):
     plt.show()
 
 
+def browse_ellipse_frames(frame_list, ellipses, screen_coords, start=0):
+    """
+    Interactive frame browser. Navigate with left/right arrow keys.
+    Press Q or close the window to quit.
+    """
+    n = len(frame_list)
+    # Build chronological index list (same order as the video)
+    chron_indices = list(range(n - 1, 0, -1))  # list_idx values in video order
+
+    state = {'pos': start, 'input': ''}
+
+    fig, ax = plt.subplots(figsize=(8, 6), dpi=130)
+    plt.subplots_adjust(bottom=0.08)
+
+    def render(pos):
+        list_idx = chron_indices[pos]
+        frame_idx = n - 1 - list_idx  # chronological frame number shown in video
+        frame = frame_list[list_idx]
+        ellipse = ellipses[list_idx]
+        sc = screen_coords[list_idx]
+
+        img = cv2.imread(frame.img)
+        if img is not None:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        ax.clear()
+        if img is not None:
+            ax.imshow(img)
+        else:
+            ax.text(0.5, 0.5, 'Image not found', ha='center', va='center', transform=ax.transAxes)
+
+        if ellipse is not None:
+            from matplotlib.patches import Ellipse as MEllipse
+            cx, cy = ellipse[0]
+            w, h = ellipse[1]
+            angle = ellipse[2]
+            patch = MEllipse((cx, cy), w, h, angle=angle,
+                             edgecolor='lime', facecolor='none', linewidth=1.5)
+            ax.add_patch(patch)
+            ax.plot(cx, cy, 'r+', markersize=12, markeredgewidth=1.5)
+            status = f'ellipse center ({cx:.1f}, {cy:.1f})'
+        else:
+            status = 'NO DETECTION'
+
+        jump_hint = f'  jump: {state["input"]}_' if state['input'] else '  type a number + Enter to jump'
+        ax.set_title(f'frame {frame_idx}  |  screen ({int(sc[0])}, {int(sc[1])})  |  {status}\n'
+                     f'[{pos + 1}/{len(chron_indices)}]  ←/→ navigate  Q quit{jump_hint}')
+        ax.axis('off')
+        fig.canvas.draw()
+
+    def on_key(event):
+        if event.key == 'right':
+            state['input'] = ''
+            state['pos'] = min(state['pos'] + 1, len(chron_indices) - 1)
+            render(state['pos'])
+        elif event.key == 'left':
+            state['input'] = ''
+            state['pos'] = max(state['pos'] - 1, 0)
+            render(state['pos'])
+        elif event.key in ('q', 'Q'):
+            plt.close(fig)
+        elif event.key in '0123456789':
+            state['input'] += event.key
+            render(state['pos'])
+        elif event.key == 'backspace':
+            state['input'] = state['input'][:-1]
+            render(state['pos'])
+        elif event.key == 'enter':
+            if state['input']:
+                target = int(state['input'])
+                state['input'] = ''
+                # target is a frame index (as shown in the title); find its pos
+                target_list_idx = n - 1 - target
+                if 0 <= target_list_idx < n and target_list_idx in chron_indices:
+                    state['pos'] = chron_indices.index(target_list_idx)
+                else:
+                    state['pos'] = max(0, min(target, len(chron_indices) - 1))
+                render(state['pos'])
+
+    fig.canvas.mpl_connect('key_press_event', on_key)
+    render(state['pos'])
+    plt.show()
+
+
 def write_ellipse_video(frame_list, ellipses, screen_coords, output_path='ellipse_detection.mp4', fps=30):
     """
     Write a video of all frames with the fitted ellipse and center drawn 

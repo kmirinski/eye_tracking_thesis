@@ -1,11 +1,11 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-from processing.preprocessing import *
-from processing.filtering import *
-from processing.pupil_finding import *
-from data.visualization import *
-from utils import *
+from data.visualization import write_ellipse_video, browse_ellipse_frames
+from processing.preprocessing import event_to_image
+from processing.filtering import generate_and_apply_masks
+from processing.pupil_finding import locate_pupil_center_kde
+from utils import timer
 from data.loaders import EyeDataset
 from processing.frame_detection import extract_pupil, extract_pupil_centers
 from gaze_estimator import GazeEstimator
@@ -54,10 +54,10 @@ def build_valid_mask(pupil_centers, screen_coords, skip_frames=15):
         sp_start, _ = sections[1]
         valid[sp_start:sp_start + skip_frames] = False
 
-    removed_basic = n - np.sum(~np.all(pupil_chron < 5, axis=1) | ~np.all(screen_chron == 0, axis=1))
+    basic_removed = np.sum(np.all(pupil_chron == -1, axis=1) | np.all(screen_chron == 0, axis=1))
     removed_total = n - np.sum(valid)
-    print(f"Frames removed (basic filter): {n - np.count_nonzero(~np.all(pupil_chron < 5, axis=1) & ~np.all(screen_chron == 0, axis=1))}")
-    print(f"Frames removed (temporal skip): {removed_total - (n - np.count_nonzero(~np.all(pupil_chron < 5, axis=1) & ~np.all(screen_chron == 0, axis=1)))}")
+    print(f"Frames removed (basic filter): {basic_removed}")
+    print(f"Frames removed (temporal skip): {removed_total - basic_removed}")
     print(f"Frames removed (total): {removed_total} / {n}")
 
     # Return mask in the original (reversed) array order
@@ -71,19 +71,24 @@ def run_pipeline(opt):
     gaze_config = GazeConfig()
 
     eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
-    print('Collecting data of the left eye of subject ' + str(opt.subject))
+    eye_index = 0 if opt.eye == 'left' else 1
+    print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
     print('Loading data from ' + opt.data_dir)
 
     with timer("Collection"):
-        eye_dataset.collect_data(eye=0)
+        eye_dataset.collect_data(eye=eye_index)
 
     # with timer("Accumulation"):
     #     event_sets = accumulate_events(eye_dataset.event_list, n_events=tracking_config.num_events)
+
+    # for i in range(4655, 4665):
+    #     extract_pupil(eye_dataset.frame_list[-i], config=frame_config, visualize=True)
 
     with timer("Center extraction + Screen coordinates extraction"):
         pupil_centers, ellipses = extract_pupil_centers(eye_dataset.frame_list, config=frame_config)
         screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
         write_ellipse_video(eye_dataset.frame_list, ellipses, screen_coords)
+        browse_ellipse_frames(eye_dataset.frame_list, ellipses, screen_coords)
 
         valid_mask = build_valid_mask(pupil_centers, screen_coords, skip_frames=gaze_config.saccade_skip_frames)
         

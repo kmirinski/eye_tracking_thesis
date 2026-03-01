@@ -61,7 +61,7 @@ def generate_eyelash_mask(img: np.ndarray, eyelid_glint_mask: np.ndarray) -> np.
     labeled_mask, num_features = label(combined_mask)
 
     if num_features == 0:
-        return np.zeros(img, dtype=np.uint8)
+        return np.zeros(img.shape, dtype=np.uint8)
     
     blob_sizes = [(labeled_mask == i).sum() for i in range(1, num_features + 1)]
     largest_blob_label = np.argmax(blob_sizes) + 1

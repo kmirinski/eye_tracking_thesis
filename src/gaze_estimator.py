@@ -49,10 +49,10 @@ class GazeEstimator:
         screen_coords = np.array(screen_coords)
 
         errors = predictions - screen_coords
-        euclidean_errors = np.sqrt(np.sum(errors ** 2, axis = 1))
+        euclidean_errors = np.sqrt(np.sum(errors ** 2, axis=1))
 
         metrics = {
-            'rmse': np.sqrt(np.mean(euclidean_errors**2)),
+            'rmse': np.sqrt(np.mean(np.sum(errors ** 2, axis=1))),
             'mean_error': np.mean(euclidean_errors),
             'std_error': np.std(euclidean_errors),
             'max_error': np.max(euclidean_errors),

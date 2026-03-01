@@ -10,7 +10,7 @@ def fit_ellipse(events):
     if len(events) < 5:
         return None
 
-    points = np.array([e.col, e.row] for e in events)
+    points = np.array([[e.col, e.row] for e in events])
     try:
         lsq_ellipse = LsqEllipse()
         lsq_ellipse.fit(points)
