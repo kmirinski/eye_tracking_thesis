@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 
-from data.plot import *
+from data.visualization import *
 from scipy.ndimage import label
 
 def generate_noise_mask(img_neg: np.ndarray, img_pos: np.ndarray, threshold: float = 0.21, kernel_size: int = 6) -> np.ndarray:
@@ -61,7 +61,7 @@ def generate_eyelash_mask(img: np.ndarray, eyelid_glint_mask: np.ndarray) -> np.
     labeled_mask, num_features = label(combined_mask)
 
     if num_features == 0:
-        return np.zeros(img, dtype=np.uint8)
+        return np.zeros(img.shape, dtype=np.uint8)
     
     blob_sizes = [(labeled_mask == i).sum() for i in range(1, num_features + 1)]
     largest_blob_label = np.argmax(blob_sizes) + 1

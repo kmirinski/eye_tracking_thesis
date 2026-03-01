@@ -14,16 +14,6 @@ class GazeEstimator:
         self.is_fitted = False
 
     def fit(self, pupil_centers, screen_coords):
-        # pupil_centers = np.array(pupil_centers)
-        # screen_coords = np.array(screen_coords)
-
-        N = pupil_centers.shape[0]
-        min_samples = (self.degree + 1) * (self.degree * 2) // 2
-
-        if N < min_samples:
-            print(f"Warning: You have fewer samples ({N}) than coefficients ({min_samples}). "
-                  f"Consider collecting more data or reducing polynomial degree.")
-        
         X_poly = self.poly.fit_transform(pupil_centers)
         print(f"Number of polynomial features: {X_poly.shape[1]}")
 
@@ -42,8 +32,7 @@ class GazeEstimator:
     def predict(self, pupil_centers):
         if not self.is_fitted:
             raise RuntimeError("Regressor must be fitted before prediction. Call fit() first.")
-
-        pupil_centers = np.array(pupil_centers)          
+          
         if pupil_centers.ndim == 1:
             pupil_centers = pupil_centers.reshape(1, -1)
         
@@ -60,10 +49,10 @@ class GazeEstimator:
         screen_coords = np.array(screen_coords)
 
         errors = predictions - screen_coords
-        euclidean_errors = np.sqrt(np.sum(errors ** 2, axis = 1))
+        euclidean_errors = np.sqrt(np.sum(errors ** 2, axis=1))
 
         metrics = {
-            'rmse': np.sqrt(np.mean(euclidean_errors**2)),
+            'rmse': np.sqrt(np.mean(np.sum(errors ** 2, axis=1))),
             'mean_error': np.mean(euclidean_errors),
             'std_error': np.std(euclidean_errors),
             'max_error': np.max(euclidean_errors),
