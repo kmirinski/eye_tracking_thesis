@@ -2,6 +2,8 @@ from KDEpy import FFTKDE
 
 import numpy as np
 from config import KDEConfig
+from processing.preprocessing import event_to_image
+from processing.filtering import generate_and_apply_masks
 
 def locate_pupil_center_kde(img: np.ndarray, config: KDEConfig = None,
                         img_width: int = 346, img_height: int = 260) -> tuple[int, int, np.ndarray]:
@@ -61,5 +63,23 @@ def extract_pupil_and_iris(img_pupil_iris: np.ndarray, config: KDEConfig = None)
         'density_map': density_map
     }
 
+def generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs, kde_config: KDEConfig = None):
+    if kde_config is None:
+        kde_config = KDEConfig()
 
+    n = len(img_idxs)
+    images = [None] * (2 * n)
+    centers = [None] * n
 
+    for idx, i in enumerate(img_idxs):
+        img_neg = event_to_image(neg_sets[i])
+        img_pos = event_to_image(pos_sets[i])
+        img = event_to_image(event_sets[i])
+        pupil_iris = generate_and_apply_masks(img_neg, img_pos, img)
+        center_x, center_y, _ = locate_pupil_center_kde(pupil_iris, config=kde_config)
+
+        images[idx] = (img, f"Image {i}")
+        images[n + idx] = (pupil_iris, f"Image {i} extracted")
+        centers[idx] = (center_x, center_y)
+
+    return images, centers
