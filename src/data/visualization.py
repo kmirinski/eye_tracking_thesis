@@ -283,6 +283,62 @@ def write_ellipse_video(frame_list, ellipses, screen_coords, output_path='ellips
     print(f'Video written to {output_path}')
 
 
+def plot_gaze_predictions(screen_pred, screen_gt, title='Gaze prediction vs ground truth'):
+    """
+    Scatter of GT vs predicted gaze points on the screen plane with error vectors,
+    plus an error distribution panel.
+
+    Args:
+        screen_pred: (N, 2) predicted screen coords (row, col)
+        screen_gt:   (N, 2) ground-truth screen coords (row, col)
+        title:       figure suptitle
+    """
+    screen_pred = np.asarray(screen_pred)
+    screen_gt   = np.asarray(screen_gt)
+
+    euclidean = np.sqrt(np.sum((screen_pred - screen_gt) ** 2, axis=1))
+    sort_idx = np.argsort(euclidean)  # draw worst-error vectors on top
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=130)
+
+    # --- Left: screen-plane scatter ---
+    ax = axes[0]
+    # error vectors
+    for i in sort_idx:
+        ax.plot(
+            [screen_gt[i, 1], screen_pred[i, 1]],
+            [screen_gt[i, 0], screen_pred[i, 0]],
+            color='gray', alpha=0.3, linewidth=0.6, zorder=1
+        )
+    sc = ax.scatter(screen_pred[:, 1], screen_pred[:, 0],
+                    c=euclidean, cmap='plasma', s=14, zorder=3,
+                    label='predicted', vmin=0)
+    ax.scatter(screen_gt[:, 1], screen_gt[:, 0],
+               c='steelblue', s=10, marker='x', zorder=2, label='ground truth')
+    fig.colorbar(sc, ax=ax, label='Euclidean error (px)')
+    ax.set_xlabel('Screen col (px)')
+    ax.set_ylabel('Screen row (px)')
+    ax.invert_yaxis()
+    ax.set_title('Screen plane  —  GT (×) vs predicted (●)')
+    ax.legend(loc='upper right', fontsize=8)
+    ax.grid(True, alpha=0.3)
+
+    # --- Right: error distribution ---
+    ax2 = axes[1]
+    ax2.hist(euclidean, bins=40, color='steelblue', edgecolor='white', linewidth=0.4)
+    ax2.axvline(np.mean(euclidean),   color='red',    linestyle='--', label=f'mean  {np.mean(euclidean):.1f}')
+    ax2.axvline(np.median(euclidean), color='orange', linestyle='--', label=f'median {np.median(euclidean):.1f}')
+    ax2.set_xlabel('Euclidean error (px)')
+    ax2.set_ylabel('Count')
+    ax2.set_title('Error distribution')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    plt.suptitle(title, fontsize=12)
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_axes(rows: int, cols: int, images: list[tuple], centers: list[tuple]):
     _, axes = plt.subplots(rows, cols, figsize=(20, 10), dpi=200)
     axes_flat = axes.flatten() if rows * cols > 1 else [axes]

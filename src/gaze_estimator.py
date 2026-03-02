@@ -28,14 +28,14 @@ class GazeEstimator:
 
         return self
 
-    
+
     def predict(self, pupil_centers):
         if not self.is_fitted:
             raise RuntimeError("Regressor must be fitted before prediction. Call fit() first.")
-          
+
         if pupil_centers.ndim == 1:
             pupil_centers = pupil_centers.reshape(1, -1)
-        
+
         X_poly = self.poly.transform(pupil_centers)
 
         x_s = self.regressor_x.predict(X_poly)

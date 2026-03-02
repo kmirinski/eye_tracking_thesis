@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-from data.visualization import write_ellipse_video, browse_ellipse_frames
+from data.visualization import write_ellipse_video, browse_ellipse_frames, plot_gaze_predictions, plot_pupil_centers_over_time_all, plot_pupil_centers_over_time
 from processing.preprocessing import event_to_image
 from processing.filtering import generate_and_apply_masks
 from processing.pupil_finding import locate_pupil_center_kde
@@ -9,8 +9,9 @@ from utils import timer
 from data.loaders import EyeDataset
 from processing.frame_detection import extract_pupil, extract_pupil_centers
 from gaze_estimator import GazeEstimator
+from lstm_gaze_estimator import LSTMGazeEstimator, build_lstm_sequences
 from tracking import PupilTracker
-from config import FrameDetectionConfig, TrackingConfig, KDEConfig, GazeConfig
+from config import FrameDetectionConfig, TrackingConfig, KDEConfig, GazeConfig, LSTMConfig
 
 
 def build_valid_mask(pupil_centers, screen_coords, skip_frames=15):
@@ -49,10 +50,10 @@ def build_valid_mask(pupil_centers, screen_coords, skip_frames=15):
                 valid[i:i + skip_frames] = False
                 prev = screen_chron[i]
 
-    # Section 1: smooth pursuit — skip only the first N frames
+    # Section 1: smooth pursuit — exclude entirely (eye lags target, corrupts mapping)
     if len(sections) >= 2:
-        sp_start, _ = sections[1]
-        valid[sp_start:sp_start + skip_frames] = False
+        sp_start, sp_end = sections[1]
+        valid[sp_start:sp_end] = False
 
     basic_removed = np.sum(np.all(pupil_chron == -1, axis=1) | np.all(screen_chron == 0, axis=1))
     removed_total = n - np.sum(valid)
@@ -72,6 +73,7 @@ def run_pipeline(opt):
 
     eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
     eye_index = 0 if opt.eye == 'left' else 1
+
     print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
     print('Loading data from ' + opt.data_dir)
 
@@ -81,20 +83,27 @@ def run_pipeline(opt):
     # with timer("Accumulation"):
     #     event_sets = accumulate_events(eye_dataset.event_list, n_events=tracking_config.num_events)
 
-    # for i in range(4655, 4665):
-    #     extract_pupil(eye_dataset.frame_list[-i], config=frame_config, visualize=True)
-
     with timer("Center extraction + Screen coordinates extraction"):
         pupil_centers, ellipses = extract_pupil_centers(eye_dataset.frame_list, config=frame_config)
         screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
-        write_ellipse_video(eye_dataset.frame_list, ellipses, screen_coords)
-        browse_ellipse_frames(eye_dataset.frame_list, ellipses, screen_coords)
+        
+        if opt.video:
+            write_ellipse_video(eye_dataset.frame_list, ellipses, screen_coords)
+        
+        if opt.frame_browser:
+            browse_ellipse_frames(eye_dataset.frame_list, ellipses, screen_coords)
 
         valid_mask = build_valid_mask(pupil_centers, screen_coords, skip_frames=gaze_config.saccade_skip_frames)
-        
-        # plot_pupil_centers_over_time_all(pupil_centers, screen_coords, valid_mask)
-        # plot_pupil_centers_over_time(pupil_centers, screen_coords, valid_mask)
-        
+
+        if opt.pe_plots:
+            plot_pupil_centers_over_time_all(pupil_centers, screen_coords, valid_mask)
+            plot_pupil_centers_over_time(pupil_centers, screen_coords, valid_mask)
+
+        # Keep raw copies for the LSTM (needs unfiltered arrays in stack order)
+        ellipses_raw = ellipses
+        screen_coords_raw = screen_coords.copy()
+        valid_mask_raw = valid_mask.copy()
+
         combined = np.hstack([pupil_centers, screen_coords])
         combined = combined[valid_mask]
         combined = np.round(combined, 2)
@@ -125,6 +134,40 @@ def run_pipeline(opt):
         val_metrics = gaze_estimator.evaluate(pupil_val, screen_val)
         print(f"Validation RMSE: {val_metrics['rmse']:.2f} pixels")
         print(f"Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
+
+        val_pred = gaze_estimator.predict(pupil_val)
+
+        if opt.ge_plots:
+            plot_gaze_predictions(val_pred, screen_val, title=f'Degree {deg} — validation set')
+
+    # --- LSTM gaze estimator ---
+    lstm_config = LSTMConfig()
+    print("\n=== LSTM Gaze Estimator ===")
+
+    X, y = build_lstm_sequences(
+        ellipses_raw, screen_coords_raw, valid_mask_raw, seq_len=lstm_config.seq_len
+    )
+    print(f"Total windows: {len(X)}  (shape {X.shape})")
+
+    n = len(X)
+    n_train = int(n * gaze_config.train_ratio)
+    n_val   = int(n * gaze_config.val_ratio)
+
+    X_train, y_train = X[:n_train],            y[:n_train]
+    X_val,   y_val   = X[n_train:n_train+n_val], y[n_train:n_train+n_val]
+    X_test,  y_test  = X[n_train+n_val:],       y[n_train+n_val:]
+
+    print(f"LSTM Training set: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
+
+    lstm_estimator = LSTMGazeEstimator(lstm_config)
+    lstm_estimator.fit(X_train, y_train, X_val, y_val)
+
+    val_metrics = lstm_estimator.evaluate(X_val, y_val)
+    print(f"LSTM Validation RMSE:       {val_metrics['rmse']:.2f} pixels")
+    print(f"LSTM Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
+
+    val_pred = lstm_estimator.predict(X_val)
+    plot_gaze_predictions(val_pred, y_val, title='LSTM — validation set')
 
 
 def generate_eye_images(neg_sets, pos_sets, event_sets, img_idxs, kde_config: KDEConfig = None):

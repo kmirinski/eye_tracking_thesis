@@ -29,3 +29,13 @@ class GazeConfig:
     train_ratio: float = 0.85
     val_ratio: float = 0.075
     saccade_skip_frames: int = 20
+
+@dataclass
+class LSTMConfig:
+    seq_len: int = 10
+    lstm_units: int = 128
+    dense_units: tuple = (64, 32, 16)
+    l1_reg: float = 1e-4
+    epochs: int = 100
+    batch_size: int = 32
+    learning_rate: float = 1e-3
