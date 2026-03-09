@@ -8,6 +8,26 @@ from config import FrameDetectionConfig, GazeConfig
 from pipeline.runners import run_regressor, run_lstm
 
 
+def _find_sections(screen_chron):
+    '''
+    Find contiguous non-zero sections in chronological screen_coords.
+    '''
+    n = len(screen_chron)
+    non_zero = ~np.all(screen_chron == 0, axis=1)
+    sections = []
+    in_section = False
+    for i in range(n):
+        if non_zero[i] and not in_section:
+            start = i
+            in_section = True
+        elif not non_zero[i] and in_section:
+            sections.append((start, i))
+            in_section = False
+    if in_section:
+        sections.append((start, n))
+    return sections
+
+
 def build_valid_mask(pupil_centers, screen_coords, skip_frames):
     n = len(screen_coords)
 
