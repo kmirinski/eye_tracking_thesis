@@ -72,10 +72,10 @@ def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relab
                 break
         if last_valid is None:
             continue
-        
+
         # Phase A: pre-saccade - relabel while eye is stable
         m = change_idx
-        while m < sac_end and (m -change_idx) < max_relabel_frames:
+        while m < sac_end and (m - change_idx) < max_relabel_frames:
             if np.all(pupil_chron[m] == -1):
                 screen_chron[m] = old_label     # blink: relabel (filtered by basic mask anyway)
                 m += 1
@@ -87,7 +87,7 @@ def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relab
                 m += 1
             else:
                 break   # saccade detected
-        
+
         # Phase B: saccade - discard frames where eye is actively moving
         while m < sac_end:
             if np.all(pupil_chron[m] == -1):
@@ -101,12 +101,62 @@ def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relab
                 m += 1
             else:
                 break   # eye settled, Phase C begins (screen_chron unchanged = new label)
-    
+
     return screen_chron[::-1], saccade_mask_chron[::-1]
 
 
 
-def build_valid_mask(pupil_centers, screen_coords, skip_frames):
+def detect_blink_artifacts(pupil_chron, threshold):
+    """
+    Detect frames where pupil detection succeeded but returned a wrong position
+    due to a partial blink (eyelid detected as pupil, etc.).
+
+    Criterion: a valid frame is a blink artifact if
+      - its displacement from the previous valid frame is > threshold  (large jump in)
+      - AND the next valid frame's displacement from it is > threshold  (large jump out)
+
+    This spike-and-return pattern distinguishes blink artifacts from saccades,
+    which stay at the new position.
+
+    Returns a boolean mask in chronological order (True = artifact, discard).
+    """
+    n = len(pupil_chron)
+    artifact = np.zeros(n, dtype=bool)
+
+    # Precompute index of next valid frame for each position
+    next_valid = np.full(n, -1, dtype=int)
+    last = -1
+    for i in range(n - 1, -1, -1):
+        if not np.all(pupil_chron[i] == -1):
+            last = i
+        next_valid[i] = last
+
+    # Compute displacement from previous valid frame
+    dist_in = np.zeros(n)
+    last_valid_pos = None
+    for i in range(n):
+        if np.all(pupil_chron[i] == -1):
+            continue
+        if last_valid_pos is not None:
+            dist_in[i] = np.linalg.norm(pupil_chron[i] - last_valid_pos)
+        last_valid_pos = pupil_chron[i].copy()
+
+    # Flag spike-and-return frames
+    for i in range(n):
+        if np.all(pupil_chron[i] == -1):
+            continue
+        j = next_valid[i + 1] if i + 1 < n else -1
+        if j == -1:
+            continue
+        dist_out = np.linalg.norm(pupil_chron[j] - pupil_chron[i])
+        if dist_in[i] > threshold and dist_out > threshold:
+            artifact[i] = True
+
+    return artifact
+
+
+def build_valid_mask(pupil_centers, screen_coords, skip_frames, skip_label_changes=True,
+                     blink_artifact_threshold=None):
     n = len(screen_coords)
 
     # Work in chronological order (arrays are stored reversed)
@@ -117,30 +167,21 @@ def build_valid_mask(pupil_centers, screen_coords, skip_frames):
     valid &= ~np.all(pupil_chron == -1, axis=1)     # failed detections
     valid &= ~np.all(screen_chron == 0, axis=1)     # zero-coord frames
 
-    non_zero = ~np.all(screen_chron == 0, axis=1)
+    if blink_artifact_threshold is not None:
+        valid &= ~detect_blink_artifacts(pupil_chron, blink_artifact_threshold)
 
-    # Find contiguous non-zero sections
-    sections = []
-    in_section = False
-    for i in range(n):
-        if non_zero[i] and not in_section:
-            start = i
-            in_section = True
-        elif not non_zero[i] and in_section:
-            sections.append((start, i))
-            in_section = False
-    if in_section:
-        sections.append((start, n))
+    sections = _find_sections(screen_chron)
 
-    # Section 0: saccades — skip first N frames at start and after every target change
+    # Section 0: saccades — always skip first N frames; optionally skip after every target change
     if len(sections) >= 1:
         sac_start, sac_end = sections[0]
         valid[sac_start:sac_start + skip_frames] = False
-        prev = screen_chron[sac_start]
-        for i in range(sac_start + 1, sac_end):
-            if not np.array_equal(screen_chron[i], prev):
-                valid[i:i + skip_frames] = False
-                prev = screen_chron[i]
+        if skip_label_changes:
+            prev = screen_chron[sac_start]
+            for i in range(sac_start + 1, sac_end):
+                if not np.array_equal(screen_chron[i], prev):
+                    valid[i:i + skip_frames] = False
+                    prev = screen_chron[i]
 
     # Section 1: smooth pursuit — exclude entirely (eye lags target, corrupts mapping)
     if len(sections) >= 2:
@@ -164,17 +205,36 @@ def pupil_center_extraction_stage(eye_dataset: EyeDataset, gaze_config: GazeConf
 
     pupil_centers, ellipses = extract_pupil_centers(eye_dataset.frame_list, config=frame_config)
     screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
-    valid_mask = build_valid_mask(pupil_centers, screen_coords, skip_frames=gaze_config.saccade_skip_frames)
+
+    if opt.relabel:
+        screen_coords, saccade_mask = relabel_transition_frames(
+            pupil_centers, screen_coords,
+            threshold=gaze_config.relabel_diff_threshold,
+            max_relabel_frames=gaze_config.relabel_max_frames,
+        )
+        valid_mask = build_valid_mask(pupil_centers, screen_coords,
+                                      skip_frames=gaze_config.saccade_skip_frames,
+                                      skip_label_changes=False,
+                                      blink_artifact_threshold=gaze_config.blink_artifact_threshold)
+        valid_mask &= ~saccade_mask
+    else:
+        valid_mask = build_valid_mask(pupil_centers, screen_coords,
+                                      skip_frames=gaze_config.saccade_skip_frames,
+                                      blink_artifact_threshold=gaze_config.blink_artifact_threshold)
 
     if opt.video:
         write_ellipse_video(eye_dataset.frame_list, ellipses, screen_coords)
 
     if opt.frame_browser:
-        browse_ellipse_frames(eye_dataset.frame_list, ellipses, screen_coords)
+        sm = saccade_mask if opt.relabel else None
+        browse_ellipse_frames(eye_dataset.frame_list, ellipses, screen_coords, saccade_mask=sm)
 
     if opt.pe_plots:
         plot_pupil_centers_over_time_all(pupil_centers, screen_coords, valid_mask)
         plot_pupil_centers_over_time(pupil_centers, screen_coords, valid_mask)
+
+    if opt.diff_plot:
+        plot_pupil_diffs(pupil_centers, screen_coords)
 
     return pupil_centers, screen_coords, ellipses, valid_mask
 

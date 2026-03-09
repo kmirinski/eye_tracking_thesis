@@ -31,8 +31,9 @@ class GazeConfig:
     train_ratio: float = 0.8
     val_ratio: float = 0.2
     saccade_skip_frames: int = 20
-    relabel_diff_threshold: float = 5.0  # px; eye displacement below this = stable fixation
+    relabel_diff_threshold: float = 3.0  # px; eye displacement below this = stable fixation
     relabel_max_frames: int = 20         # safety cap: never relabel more than this many frames per label change
+    blink_artifact_threshold: float = 8.0  # px; spike-and-return above this = partial blink artifact
 
 @dataclass
 class LSTMConfig:

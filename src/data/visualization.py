@@ -155,7 +155,7 @@ def plot_pupil_centers_over_time(pupil_centers, screen_coords, valid_mask=None):
     plt.show()
 
 
-def browse_ellipse_frames(frame_list, ellipses, screen_coords, start=0):
+def browse_ellipse_frames(frame_list, ellipses, screen_coords, saccade_mask=None, start=0):
     """
     Interactive frame browser. Navigate with left/right arrow keys.
     Press Q or close the window to quit.
@@ -166,7 +166,7 @@ def browse_ellipse_frames(frame_list, ellipses, screen_coords, start=0):
 
     state = {'pos': start, 'input': ''}
 
-    fig, ax = plt.subplots(figsize=(8, 6), dpi=130)
+    fig, ax = plt.subplots(figsize=(8, 6), dpi=200)
     plt.subplots_adjust(bottom=0.08)
 
     def render(pos):
@@ -199,8 +199,9 @@ def browse_ellipse_frames(frame_list, ellipses, screen_coords, start=0):
         else:
             status = 'NO DETECTION'
 
+        discard_tag = '  |  SACCADE (discarded)' if (saccade_mask is not None and saccade_mask[list_idx]) else ''
         jump_hint = f'  jump: {state["input"]}_' if state['input'] else '  type a number + Enter to jump'
-        ax.set_title(f'frame {frame_idx}  |  screen ({int(sc[0])}, {int(sc[1])})  |  {status}\n'
+        ax.set_title(f'frame {frame_idx}  |  screen ({int(sc[0])}, {int(sc[1])})  |  {status}{discard_tag}\n'
                      f'[{pos + 1}/{len(chron_indices)}]  ←/→ navigate  Q quit{jump_hint}')
         ax.axis('off')
         fig.canvas.draw()
@@ -335,6 +336,51 @@ def plot_gaze_predictions(screen_pred, screen_gt, title='Gaze prediction vs grou
     ax2.grid(True, alpha=0.3)
 
     plt.suptitle(title, fontsize=12)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_pupil_diffs(pupil_centers, screen_coords):
+    """
+    Plot frame-to-frame pupil displacement (L2 norm) over time in chronological order.
+    Red vertical lines mark label changes. Blink frames (pupil == -1) are skipped when
+    computing diffs — displacement is always measured against the last valid pupil position.
+    """
+    pc = pupil_centers[::-1]
+    sc = screen_coords[::-1]
+    n = len(pc)
+
+    # Blink-aware diffs: compare each valid frame to the last valid position
+    diffs = np.zeros(n)
+    last_valid = None
+    for i in range(n):
+        if np.all(pc[i] == -1):
+            continue  # blink — skip, don't update last_valid
+        if last_valid is not None:
+            diffs[i] = np.linalg.norm(pc[i] - last_valid)
+        last_valid = pc[i].copy()
+
+    # Find label change indices (ignore blink frames when comparing)
+    change_indices = []
+    prev_label = None
+    for i in range(n):
+        if np.all(pc[i] == -1):
+            continue
+        if prev_label is not None and not np.array_equal(sc[i], prev_label):
+            change_indices.append(i)
+        prev_label = sc[i].copy()
+
+    fig, ax = plt.subplots(figsize=(20, 4), dpi=150)
+    ax.plot(np.arange(n), diffs, lw=0.8, color='steelblue', label='pupil displacement (px)')
+    for ci in change_indices:
+        ax.axvline(ci, color='red', linestyle='--', linewidth=0.6, alpha=0.7)
+    # Dummy line for legend
+    ax.axvline(-1, color='red', linestyle='--', linewidth=0.6, alpha=0.7, label='label change')
+    ax.set_xlabel('Frame index (chronological)')
+    ax.set_ylabel('Displacement (px)')
+    ax.set_title('Frame-to-frame pupil displacement — spikes should appear ~10-15 frames after each label change')
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
 

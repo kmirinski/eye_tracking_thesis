@@ -19,6 +19,10 @@ parser.add_argument('--video', action='store_true')
 parser.add_argument('--frame_browser', action='store_true')
 parser.add_argument("--pe_plots", action='store_true')
 parser.add_argument('--ge_plots', action='store_true')
+parser.add_argument('--relabel', action='store_true',
+                    help='relabel pre-saccade frames to previous label; discard active saccade frames')
+parser.add_argument('--diff_plot', action='store_true',
+                    help='plot frame-to-frame pupil displacement over time with label-change markers')
 
 
 
