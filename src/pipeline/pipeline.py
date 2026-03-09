@@ -1,6 +1,6 @@
 import numpy as np
 
-from data.visualization import write_ellipse_video, browse_ellipse_frames, plot_pupil_centers_over_time_all, plot_pupil_centers_over_time
+from data.visualization import write_ellipse_video, browse_ellipse_frames, plot_pupil_centers_over_time_all, plot_pupil_centers_over_time, plot_pupil_diffs
 from utils import timer
 from data.loaders import EyeDataset
 from processing.frame_detection import extract_pupil_centers
@@ -11,6 +11,10 @@ from pipeline.runners import run_regressor, run_lstm
 def _find_sections(screen_chron):
     '''
     Find contiguous non-zero sections in chronological screen_coords.
+
+    Using the ebv-eye dataset, the sections are expected to be two:
+        1. Saccadic movements
+        2. Smooth pursuit movements
     '''
     n = len(screen_chron)
     non_zero = ~np.all(screen_chron == 0, axis=1)
@@ -26,6 +30,80 @@ def _find_sections(screen_chron):
     if in_section:
         sections.append((start, n))
     return sections
+
+def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relabel_frames):
+    '''
+    For each label change (after the first) in the saccadic section:
+        - Phase A: while the eye is stable (dist to last_valid < threshold), relabel frames to old label
+        - Phase B: while the eye is moving (dist >= threshold), mark frames to discard (saccade)
+        - Phase C: remaining frames keep the new label
+    
+    Blink frames (pupil == -1) in Phase A are relabeled (filtered anyway by basic mask).
+    Blink frames in Phase B are discarded. Diffs are always vs. last valid pupil to avoid 
+    false saccade triggers from blinks.
+
+    Returns (screen_coords_relabled, saccade_discard_mask) in storage order.
+    '''
+    n = len(screen_coords)
+    pupil_chron = pupil_centers[::-1]
+    screen_chron = screen_coords[::-1].copy()
+    saccade_mask_chron = np.zeros(n, dtype=bool)
+
+    sections = _find_sections(screen_chron)
+    if not sections:
+        return screen_coords.copy(), saccade_mask_chron[::-1]
+
+    sac_start, sac_end = sections[0]
+
+    # Pass 1: detect label changes on ORIGINAL screen_chron
+    change_points = []
+    prev = screen_chron[sac_start].copy()
+    for i in range(sac_start + 1, sac_end):
+        if not np.array_equal(screen_chron[i], prev):
+            change_points.append((i, prev.copy()))
+            prev = screen_chron[i].copy()
+    
+    # Pass 2: process each label change
+    for change_idx, old_label in change_points:
+        last_valid = None
+        for k in range(change_idx - 1, sac_start - 1, -1):
+            if not np.all(pupil_chron[k] == -1):
+                last_valid = pupil_chron[k].copy()
+                break
+        if last_valid is None:
+            continue
+        
+        # Phase A: pre-saccade - relabel while eye is stable
+        m = change_idx
+        while m < sac_end and (m -change_idx) < max_relabel_frames:
+            if np.all(pupil_chron[m] == -1):
+                screen_chron[m] = old_label     # blink: relabel (filtered by basic mask anyway)
+                m += 1
+                continue
+            dist = np.linalg.norm(pupil_chron[m] - last_valid)
+            if dist < threshold:
+                screen_chron[m] = old_label
+                last_valid = pupil_chron[m].copy()
+                m += 1
+            else:
+                break   # saccade detected
+        
+        # Phase B: saccade - discard frames where eye is actively moving
+        while m < sac_end:
+            if np.all(pupil_chron[m] == -1):
+                saccade_mask_chron[m] = True    # blink during saccade: discard
+                m += 1
+                continue
+            dist = np.linalg.norm(pupil_chron[m] - last_valid)
+            if dist >= threshold:
+                saccade_mask_chron[m] = True
+                last_valid = pupil_chron[m].copy()
+                m += 1
+            else:
+                break   # eye settled, Phase C begins (screen_chron unchanged = new label)
+    
+    return screen_chron[::-1], saccade_mask_chron[::-1]
+
 
 
 def build_valid_mask(pupil_centers, screen_coords, skip_frames):
