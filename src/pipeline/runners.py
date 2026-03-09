@@ -7,25 +7,17 @@ from models.lstm import LSTMGazeEstimator, build_lstm_sequences
 from config import GazeConfig, LSTMConfig
 
 
-def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt):
+def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeConfig, opt):
 
-    combined = np.hstack([pupil_centers, screen_coords])
-    combined = np.round(combined[valid_mask], 2)
-    pupil_centers, screen_coords = combined[:, :2], combined[:, 2:]
+    pupil_centers = np.round(pupil_centers[valid_mask], 2)
+    screen_coords = np.round(screen_coords[valid_mask], 2)
 
-    test_val_ratio = 1 - gaze_config.train_ratio
-    val_in_test_val = gaze_config.val_ratio / test_val_ratio
-
-    pupil_train, pupil_test_val, screen_train, screen_test_val = train_test_split(
-        pupil_centers, screen_coords, test_size=test_val_ratio, random_state=42
-    )
-    pupil_test, pupil_val, screen_test, screen_val = train_test_split(
-        pupil_test_val, screen_test_val, test_size=val_in_test_val, random_state=42
+    pupil_train, pupil_val, screen_train, screen_val = train_test_split(
+        pupil_centers, screen_coords, test_size=gaze_config.val_ratio, random_state=42
     )
 
     print(f"Training set size: {len(pupil_train)}")
     print(f"Validation set size: {len(pupil_val)}")
-    print(f"Test set size: {len(pupil_test)}")
 
     for deg in gaze_config.poly_degrees:
         print(f"\n--- Degree {deg} ---")

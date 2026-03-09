@@ -299,7 +299,7 @@ def plot_gaze_predictions(screen_pred, screen_gt, title='Gaze prediction vs grou
     euclidean = np.sqrt(np.sum((screen_pred - screen_gt) ** 2, axis=1))
     sort_idx = np.argsort(euclidean)  # draw worst-error vectors on top
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=130)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=200)
 
     # --- Left: screen-plane scatter ---
     ax = axes[0]

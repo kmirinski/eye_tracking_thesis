@@ -8,8 +8,7 @@ from config import FrameDetectionConfig, GazeConfig
 from pipeline.runners import run_regressor, run_lstm
 
 
-
-def build_valid_mask(pupil_centers, screen_coords, skip_frames=15):
+def build_valid_mask(pupil_centers, screen_coords, skip_frames):
     n = len(screen_coords)
 
     # Work in chronological order (arrays are stored reversed)
@@ -61,19 +60,19 @@ def build_valid_mask(pupil_centers, screen_coords, skip_frames=15):
 
 
 
-def pupil_center_extraction_stage(eye_dataset: EyeDataset, gaze_config, opt):
-    frame_config = FrameDetectionConfig()
+def pupil_center_extraction_stage(eye_dataset: EyeDataset, gaze_config: GazeConfig, opt):
+    corner = 'upper_right' if opt.eye == 'left' else 'upper_left'
+    frame_config = FrameDetectionConfig(triangle_corner=corner)
 
     pupil_centers, ellipses = extract_pupil_centers(eye_dataset.frame_list, config=frame_config)
     screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
+    valid_mask = build_valid_mask(pupil_centers, screen_coords, skip_frames=gaze_config.saccade_skip_frames)
 
     if opt.video:
         write_ellipse_video(eye_dataset.frame_list, ellipses, screen_coords)
 
     if opt.frame_browser:
         browse_ellipse_frames(eye_dataset.frame_list, ellipses, screen_coords)
-
-    valid_mask = build_valid_mask(pupil_centers, screen_coords, skip_frames=gaze_config.saccade_skip_frames)
 
     if opt.pe_plots:
         plot_pupil_centers_over_time_all(pupil_centers, screen_coords, valid_mask)
@@ -98,7 +97,8 @@ def run_pipeline(opt):
     with timer("Center extraction + Screen coordinates extraction"):
         pupil_centers, screen_coords, ellipses, valid_mask = pupil_center_extraction_stage(eye_dataset, gaze_config, opt)
 
-    if opt.model == 'regressor':
-        run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt)
-    elif opt.model == 'lstm':
-        run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt)
+    with timer("Model training"):
+        if opt.model == 'regressor':
+            run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt)
+        elif opt.model == 'lstm':
+            run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt)
