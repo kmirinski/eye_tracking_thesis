@@ -1,5 +1,4 @@
 import numpy as np
-from sklearn.model_selection import train_test_split
 
 from data.visualization import plot_gaze_predictions
 from models.polynomial import GazeEstimator
@@ -7,13 +6,38 @@ from models.lstm import LSTMGazeEstimator, build_lstm_sequences
 from config import GazeConfig, LSTMConfig
 
 
+def split_by_label(pupil_centers, screen_coords, val_ratio, rng=None):
+    """
+    For each unique label (screen coordinate), assign 80% of its frames to
+    training and 20% to validation, sampling randomly within each label group.
+    """
+    if rng is None:
+        rng = np.random.default_rng(42)
+
+    train_idx, val_idx = [], []
+    labels = [tuple(r) for r in screen_coords]
+    unique_labels = set(labels)
+
+    for label in unique_labels:
+        idx = np.where((screen_coords == label).all(axis=1))[0]
+        rng.shuffle(idx)
+        n_val = max(1, int(len(idx) * val_ratio))
+        val_idx.extend(idx[:n_val])
+        train_idx.extend(idx[n_val:])
+
+    train_idx = np.array(train_idx)
+    val_idx = np.array(val_idx)
+    return (pupil_centers[train_idx], pupil_centers[val_idx],
+            screen_coords[train_idx], screen_coords[val_idx])
+
+
 def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeConfig, opt):
 
     pupil_centers = np.round(pupil_centers[valid_mask], 2)
     screen_coords = np.round(screen_coords[valid_mask], 2)
 
-    pupil_train, pupil_val, screen_train, screen_val = train_test_split(
-        pupil_centers, screen_coords, test_size=gaze_config.val_ratio, random_state=42
+    pupil_train, pupil_val, screen_train, screen_val = split_by_label(
+        pupil_centers, screen_coords, val_ratio=gaze_config.val_ratio
     )
 
     print(f"Training set size: {len(pupil_train)}")
