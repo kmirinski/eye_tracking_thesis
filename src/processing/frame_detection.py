@@ -49,10 +49,23 @@ def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=T
             aspect_ratio >= config.min_aspect_ratio and
             major >= config.min_axis_px and
             major <= config.max_axis_px and
-            area >= config.min_ellipse_area and
-            config.center_min[0] < cx <= config.center_max[0] and
-            config.center_min[1] < cy <= config.center_max[1]
+            area >= config.min_ellipse_area
         )
+
+        # Optional bounding box
+        if config.center_min is not None:
+            valid = valid and config.center_min[0] < cx <= config.center_max[0]
+            valid = valid and config.center_min[1] < cy <= config.center_max[1]
+
+        # Corner triangle exclusion
+        if config.triangle_corner == 'upper_right':
+            W = img.shape[1]
+            in_triangle = (cx - cy >= W - config.triangle_size)
+        elif config.triangle_corner == 'upper_left':
+            in_triangle = (cx + cy <= config.triangle_size)
+        else:
+            in_triangle = False
+        valid = valid and not in_triangle
 
         if valid:
             contour_area = cv2.contourArea(cnt)
