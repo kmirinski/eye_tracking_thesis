@@ -3,7 +3,7 @@ from dataclasses import dataclass
 @dataclass
 class FrameDetectionConfig:
     threshold: int = 20
-    morph_kernel_size: int = 3
+    morph_kernel_size: int = 2
     min_aspect_ratio: float = 0.37
     min_axis_px: int = 0
     max_axis_px: int = 120
