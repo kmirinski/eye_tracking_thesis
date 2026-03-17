@@ -16,7 +16,9 @@ parser.add_argument('--model', default="regressor", choices=['regressor', 'lstm'
 
 # Boolean flags
 parser.add_argument('--video', action='store_true')
-parser.add_argument('--frame_browser', action='store_true')
+parser.add_argument('--f_browse', action='store_true')
+parser.add_argument('--pe_browse', action='store_true',
+                    help='interactive browser showing pupil extraction stages for each frame')
 parser.add_argument("--pe_plots", action='store_true')
 parser.add_argument('--ge_plots', action='store_true')
 parser.add_argument('--relabel', action='store_true',

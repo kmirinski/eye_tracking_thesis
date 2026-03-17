@@ -2,11 +2,11 @@ from dataclasses import dataclass
 
 @dataclass
 class FrameDetectionConfig:
-    threshold: int = 20
-    morph_kernel_size: int = 2
-    min_aspect_ratio: float = 0.37
-    min_axis_px: int = 0
-    max_axis_px: int = 120
+    threshold: int = 10
+    morph_kernel_size: int = 3
+    min_aspect_ratio: float = 0.35
+    min_axis_px: int = 0            # Currently not in use
+    max_axis_px: int = 120          # Currently not in use
     center_min: tuple = None      # (x_min, y_min) accepted pupil center in px; None = no limit
     center_max: tuple = None      # (x_max, y_max) accepted pupil center in px; None = no limit
     triangle_corner: str = None   # 'upper_right' (left eye) or 'upper_left' (right eye)

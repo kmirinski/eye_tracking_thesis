@@ -385,6 +385,105 @@ def plot_pupil_diffs(pupil_centers, screen_coords):
     plt.show()
 
 
+def browse_pupil_extraction(frame_list, config, screen_coords, start=0):
+    """
+    Interactive browser for per-frame pupil extraction stages.
+    Shows the 6-panel detection figure for each frame.
+    Navigate with left/right arrows, type digits + Enter to jump, Q to quit.
+    """
+    import matplotlib.patches as mpatches
+    from processing.frame_detection import _run_detection
+
+    n = len(frame_list)
+    chron_indices = list(range(n - 1, 0, -1))
+
+    state = {'pos': start, 'input': ''}
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10), dpi=150)
+    plt.subplots_adjust(bottom=0.08)
+
+    def render(pos):
+        list_idx = chron_indices[pos]
+        frame_idx = n - 1 - list_idx
+        frame = frame_list[list_idx]
+        sc = screen_coords[list_idx]
+
+        img, binary, opened, contour_img, selected_points, ellipse = _run_detection(frame, config)
+
+        for ax in axes.flat:
+            ax.clear()
+            ax.axis('off')
+
+        axes[0, 0].imshow(img, cmap='gray')
+        axes[0, 0].set_title('Original Image')
+
+        axes[0, 1].imshow(binary, cmap='gray')
+        axes[0, 1].set_title('Binarized (Hθ)')
+
+        axes[0, 2].imshow(opened, cmap='gray')
+        axes[0, 2].set_title('After Opening (◦ Sσ)')
+
+        axes[1, 0].imshow(contour_img, cmap='gray')
+        axes[1, 0].set_title('Contours')
+
+        axes[1, 1].imshow(img, cmap='gray')
+        if len(selected_points) > 0:
+            axes[1, 1].scatter(selected_points[:, 0], selected_points[:, 1],
+                               c='red', s=1, alpha=0.5)
+        axes[1, 1].set_title(f'Selected Contour ({len(selected_points)} points)')
+
+        img_with_ellipse = img.copy()
+        if ellipse is not None:
+            cv2.ellipse(img_with_ellipse, ellipse, 255, 1)
+        axes[1, 2].imshow(img_with_ellipse, cmap='gray')
+        if ellipse is not None:
+            center = (int(ellipse[0][0]), int(ellipse[0][1]))
+            axes[1, 2].set_title(f'Fitted Ellipse  Center: {center}')
+        else:
+            axes[1, 2].set_title('No Ellipse Fitted')
+
+        jump_hint = f'  jump: {state["input"]}_' if state['input'] else '  type number + Enter to jump'
+        status = f'ellipse {(int(ellipse[0][0]), int(ellipse[0][1]))}' if ellipse is not None else 'NO DETECTION'
+        fig.suptitle(
+            f'frame {frame_idx}  |  screen ({int(sc[0])}, {int(sc[1])})  |  {status}\n'
+            f'[{pos + 1}/{len(chron_indices)}]  ←/→ navigate  Q quit{jump_hint}',
+            fontsize=10
+        )
+        fig.canvas.draw()
+
+    def on_key(event):
+        if event.key == 'right':
+            state['input'] = ''
+            state['pos'] = min(state['pos'] + 1, len(chron_indices) - 1)
+            render(state['pos'])
+        elif event.key == 'left':
+            state['input'] = ''
+            state['pos'] = max(state['pos'] - 1, 0)
+            render(state['pos'])
+        elif event.key in ('q', 'Q'):
+            plt.close(fig)
+        elif event.key in '0123456789':
+            state['input'] += event.key
+            render(state['pos'])
+        elif event.key == 'backspace':
+            state['input'] = state['input'][:-1]
+            render(state['pos'])
+        elif event.key == 'enter':
+            if state['input']:
+                target = int(state['input'])
+                state['input'] = ''
+                target_list_idx = n - 1 - target
+                if 0 <= target_list_idx < n and target_list_idx in chron_indices:
+                    state['pos'] = chron_indices.index(target_list_idx)
+                else:
+                    state['pos'] = max(0, min(target, len(chron_indices) - 1))
+                render(state['pos'])
+
+    fig.canvas.mpl_connect('key_press_event', on_key)
+    render(state['pos'])
+    plt.show()
+
+
 def plot_axes(rows: int, cols: int, images: list[tuple], centers: list[tuple]):
     _, axes = plt.subplots(rows, cols, figsize=(20, 10), dpi=200)
     axes_flat = axes.flatten() if rows * cols > 1 else [axes]

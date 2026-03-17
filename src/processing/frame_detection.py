@@ -10,10 +10,8 @@ def ellipse_area(ellipse) -> float:
     return np.pi * (w / 2) * (h / 2)
 
 
-def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=True):
-    if config is None:
-        config = FrameDetectionConfig()
-
+def _run_detection(frame: Frame, config: FrameDetectionConfig):
+    """Run the full detection pipeline and return all intermediate stages."""
     img = cv2.imread(frame.img)
 
     if len(img.shape) == 3:
@@ -41,23 +39,16 @@ def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=T
         if minor > major:
             minor, major = major, minor
         aspect_ratio = minor / major if major > 0 else 0
-        # print(aspect_ratio)
 
         cx, cy = ellipse[0]
         area = ellipse_area(ellipse)
-        valid = (
-            aspect_ratio >= config.min_aspect_ratio and
-            major >= config.min_axis_px and
-            major <= config.max_axis_px and
-            area >= config.min_ellipse_area
-        )
 
-        # Optional bounding box
+        valid = (aspect_ratio >= config.min_aspect_ratio and area >= config.min_ellipse_area)
+
         if config.center_min is not None:
             valid = valid and config.center_min[0] < cx <= config.center_max[0]
             valid = valid and config.center_min[1] < cy <= config.center_max[1]
 
-        # Corner triangle exclusion
         if config.triangle_corner == 'upper_right':
             W = img.shape[1]
             in_triangle = (cx - cy >= W - config.triangle_size)
@@ -78,6 +69,15 @@ def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=T
     cv2.drawContours(contour_img, contours, -1, 255, 1)
 
     selected_points = best_contour.reshape(-1, 2) if best_contour is not None else np.zeros((0, 2), dtype=np.int32)
+
+    return img, binary, opened, contour_img, selected_points, best_ellipse
+
+
+def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=True):
+    if config is None:
+        config = FrameDetectionConfig()
+
+    img, binary, opened, contour_img, selected_points, best_ellipse = _run_detection(frame, config)
 
     if visualize:
         visualize_detection(img, binary, opened, contour_img, selected_points, best_ellipse)

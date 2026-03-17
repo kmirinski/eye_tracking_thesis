@@ -1,9 +1,9 @@
 import numpy as np
 
-from data.visualization import write_ellipse_video, browse_ellipse_frames, plot_pupil_centers_over_time_all, plot_pupil_centers_over_time, plot_pupil_diffs
+from data.visualization import write_ellipse_video, browse_ellipse_frames, browse_pupil_extraction, plot_pupil_centers_over_time_all, plot_pupil_centers_over_time, plot_pupil_diffs
 from utils import timer
 from data.loaders import EyeDataset
-from processing.frame_detection import extract_pupil_centers
+from processing.frame_detection import extract_pupil_centers, extract_pupil
 from config import FrameDetectionConfig, GazeConfig
 from pipeline.runners import run_regressor, run_lstm
 
@@ -225,9 +225,12 @@ def pupil_center_extraction_stage(eye_dataset: EyeDataset, gaze_config: GazeConf
     if opt.video:
         write_ellipse_video(eye_dataset.frame_list, ellipses, screen_coords)
 
-    if opt.frame_browser:
+    if opt.f_browse:
         sm = saccade_mask if opt.relabel else None
         browse_ellipse_frames(eye_dataset.frame_list, ellipses, screen_coords, saccade_mask=sm)
+
+    if opt.pe_browse:
+        browse_pupil_extraction(eye_dataset.frame_list, frame_config, screen_coords)
 
     if opt.pe_plots:
         plot_pupil_centers_over_time_all(pupil_centers, screen_coords, valid_mask)
