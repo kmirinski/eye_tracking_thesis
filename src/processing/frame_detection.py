@@ -73,65 +73,17 @@ def _run_detection(frame: Frame, config: FrameDetectionConfig):
     return img, binary, opened, contour_img, selected_points, best_ellipse
 
 
-def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=True):
+def extract_pupil(frame: Frame, config: FrameDetectionConfig = None):
     if config is None:
         config = FrameDetectionConfig()
 
-    img, binary, opened, contour_img, selected_points, best_ellipse = _run_detection(frame, config)
-
-    if visualize:
-        visualize_detection(img, binary, opened, contour_img, selected_points, best_ellipse)
+    _, _, _, _, _, best_ellipse = _run_detection(frame, config)
 
     if best_ellipse is not None:
         return np.array(best_ellipse[0], dtype=np.float32), best_ellipse
     else:
         return np.array((-1, -1), dtype=np.float32), None
 
-
-def visualize_detection(img, binary, opened, contour_img, candidate_points, ellipse):
-    import matplotlib.pyplot as plt
-
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10), dpi=150)
-
-    axes[0, 0].imshow(img, cmap='gray')
-    axes[0, 0].set_title('Original Image')
-    axes[0, 0].axis('off')
-
-    # Binarized image
-    axes[0, 1].imshow(binary, cmap='gray')
-    axes[0, 1].set_title('Binarized (Hθ)')
-    axes[0, 1].axis('off')
-
-    # After morphological opening
-    axes[0, 2].imshow(opened, cmap='gray')
-    axes[0, 2].set_title('After Opening (◦ Sσ)')
-    axes[0, 2].axis('off')
-
-    axes[1, 0].imshow(contour_img, cmap='gray')
-    axes[1, 0].set_title('Contours')
-    axes[1, 0].axis('off')
-
-    axes[1, 1].imshow(img, cmap='gray')
-    if len(candidate_points) > 0:
-        axes[1, 1].scatter(candidate_points[:, 0], candidate_points[:, 1],
-                          c='red', s=1, alpha=0.5)
-    axes[1, 1].set_title(f'Selected Contour ({len(candidate_points)} points)')
-    axes[1, 1].axis('off')
-
-    img_with_ellipse = img.copy()
-    if ellipse is not None:
-        cv2.ellipse(img_with_ellipse, ellipse, 255, 1)
-
-    axes[1, 2].imshow(img_with_ellipse, cmap='gray')
-    if ellipse is not None:
-        center = (int(ellipse[0][0]), int(ellipse[0][1]))
-        axes[1, 2].set_title(f'Fitted Ellipse\nCenter: {center}')
-    else:
-        axes[1, 2].set_title('No Ellipse Fitted')
-    axes[1, 2].axis('off')
-
-    plt.tight_layout()
-    plt.show()
 
 def extract_pupil_centers(frame_list, config: FrameDetectionConfig = None):
     n = len(frame_list)
