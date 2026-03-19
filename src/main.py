@@ -25,6 +25,8 @@ parser.add_argument('--relabel', action='store_true',
                     help='relabel pre-saccade frames to previous label; discard active saccade frames')
 parser.add_argument('--diff_plot', action='store_true',
                     help='plot frame-to-frame pupil displacement over time with label-change markers')
+parser.add_argument('--relabel_diag', action='store_true',
+                    help='plot relabeling phase diagnostic (requires --relabel)')
 
 
 

@@ -3,7 +3,7 @@ import numpy as np
 from data.visualization import write_ellipse_video, browse_ellipse_frames, browse_pupil_extraction, plot_pupil_centers_over_time_all, plot_pupil_centers_over_time, plot_pupil_diffs
 from utils import timer
 from data.loaders import EyeDataset
-from processing.frame_detection import extract_pupil_centers, extract_pupil
+from processing.frame_detection import extract_pupil_centers
 from config import FrameDetectionConfig, GazeConfig
 from pipeline.runners import run_regressor, run_lstm
 
@@ -31,15 +31,17 @@ def _find_sections(screen_chron):
         sections.append((start, n))
     return sections
 
-def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relabel_frames):
+def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relabel_frames,
+                               stability_window=0):
     '''
     For each label change (after the first) in the saccadic section:
         - Phase A: while the eye is stable (dist to last_valid < threshold), relabel frames to old label
         - Phase B: while the eye is moving (dist >= threshold), mark frames to discard (saccade)
+        - Phase D: discard until stability_window consecutive frames are all below threshold
         - Phase C: remaining frames keep the new label
-    
+
     Blink frames (pupil == -1) in Phase A are relabeled (filtered anyway by basic mask).
-    Blink frames in Phase B are discarded. Diffs are always vs. last valid pupil to avoid 
+    Blink frames in Phase B/D are discarded. Diffs are always vs. last valid pupil to avoid
     false saccade triggers from blinks.
 
     Returns (screen_coords_relabled, saccade_discard_mask) in storage order.
@@ -62,7 +64,7 @@ def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relab
         if not np.array_equal(screen_chron[i], prev):
             change_points.append((i, prev.copy()))
             prev = screen_chron[i].copy()
-    
+
     # Pass 2: process each label change
     for change_idx, old_label in change_points:
         last_valid = None
@@ -100,75 +102,50 @@ def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relab
                 last_valid = pupil_chron[m].copy()
                 m += 1
             else:
-                break   # eye settled, Phase C begins (screen_chron unchanged = new label)
+                break   # large movement ended, Phase D begins
+
+        # Phase D: stability window — discard until stability_window consecutive frames are below threshold
+        stable_count = 0
+        while m < sac_end and stable_count < stability_window:
+            if np.all(pupil_chron[m] == -1):
+                saccade_mask_chron[m] = True   # blink resets window
+                stable_count = 0
+                m += 1
+                continue
+            dist = np.linalg.norm(pupil_chron[m] - last_valid)
+            if dist >= threshold:
+                saccade_mask_chron[m] = True   # spike: discard and reset window
+                last_valid = pupil_chron[m].copy()
+                stable_count = 0
+                m += 1
+            else:
+                saccade_mask_chron[m] = True   # within stability window: discard
+                last_valid = pupil_chron[m].copy()
+                stable_count += 1
+                m += 1
+        # Phase C begins at m (eye settled)
 
     return screen_chron[::-1], saccade_mask_chron[::-1]
 
 
-
-def detect_blink_artifacts(pupil_chron, threshold):
-    """
-    Detect frames where pupil detection succeeded but returned a wrong position
-    due to a partial blink (eyelid detected as pupil, etc.).
-
-    Criterion: a valid frame is a blink artifact if
-      - its displacement from the previous valid frame is > threshold  (large jump in)
-      - AND the next valid frame's displacement from it is > threshold  (large jump out)
-
-    This spike-and-return pattern distinguishes blink artifacts from saccades,
-    which stay at the new position.
-
-    Returns a boolean mask in chronological order (True = artifact, discard).
-    """
-    n = len(pupil_chron)
-    artifact = np.zeros(n, dtype=bool)
-
-    # Precompute index of next valid frame for each position
-    next_valid = np.full(n, -1, dtype=int)
-    last = -1
-    for i in range(n - 1, -1, -1):
-        if not np.all(pupil_chron[i] == -1):
-            last = i
-        next_valid[i] = last
-
-    # Compute displacement from previous valid frame
-    dist_in = np.zeros(n)
-    last_valid_pos = None
-    for i in range(n):
-        if np.all(pupil_chron[i] == -1):
-            continue
-        if last_valid_pos is not None:
-            dist_in[i] = np.linalg.norm(pupil_chron[i] - last_valid_pos)
-        last_valid_pos = pupil_chron[i].copy()
-
-    # Flag spike-and-return frames
-    for i in range(n):
-        if np.all(pupil_chron[i] == -1):
-            continue
-        j = next_valid[i + 1] if i + 1 < n else -1
-        if j == -1:
-            continue
-        dist_out = np.linalg.norm(pupil_chron[j] - pupil_chron[i])
-        if dist_in[i] > threshold and dist_out > threshold:
-            artifact[i] = True
-
-    return artifact
-
-
-def build_valid_mask(pupil_centers, screen_coords, skip_frames, skip_label_changes=True,
-                     blink_artifact_threshold=None):
+def build_valid_mask(blink_mask, screen_coords, skip_frames,
+                     saccade_mask=None, skip_label_changes=True, post_blink_skip_frames=1):
     n = len(screen_coords)
 
     # Work in chronological order (arrays are stored reversed)
-    pupil_chron = pupil_centers[::-1]
+    blink_mask_chron = blink_mask[::-1]
     screen_chron = screen_coords[::-1]
 
-    valid = np.ones(n, dtype=bool)
-    valid &= ~np.all(pupil_chron == -1, axis=1)     # failed detections
-    valid &= ~np.all(screen_chron == 0, axis=1)     # zero-coord frames
+    # Post-blink skip: discard first N valid frames after each blink run
+    post_blink_chron = np.zeros(n, dtype=bool)
+    post_blink_chron[1:] = blink_mask_chron[:-1] & ~blink_mask_chron[1:]
+    for _ in range(post_blink_skip_frames - 1):
+        post_blink_chron[1:] |= post_blink_chron[:-1] & ~blink_mask_chron[1:]
 
-    if blink_artifact_threshold is not None:
-        valid &= ~detect_blink_artifacts(pupil_chron, blink_artifact_threshold)
+    valid = np.ones(n, dtype=bool)
+    valid &= ~blink_mask_chron                          # failed detections
+    valid &= ~post_blink_chron                          # first frame after blink run
+    valid &= ~np.all(screen_chron == 0, axis=1)        # zero-coord frames
 
     sections = _find_sections(screen_chron)
 
@@ -188,7 +165,10 @@ def build_valid_mask(pupil_centers, screen_coords, skip_frames, skip_label_chang
         sp_start, sp_end = sections[1]
         valid[sp_start:sp_end] = False
 
-    basic_removed = np.sum(np.all(pupil_chron == -1, axis=1) | np.all(screen_chron == 0, axis=1))
+    if saccade_mask is not None:
+        valid &= ~saccade_mask[::-1]
+
+    basic_removed = np.sum(blink_mask_chron | post_blink_chron | np.all(screen_chron == 0, axis=1))
     removed_total = n - np.sum(valid)
     print(f"Frames removed (basic filter): {basic_removed}")
     print(f"Frames removed (temporal skip): {removed_total - basic_removed}")
@@ -198,36 +178,108 @@ def build_valid_mask(pupil_centers, screen_coords, skip_frames, skip_label_chang
     return valid[::-1]
 
 
-
-def pupil_center_extraction_stage(eye_dataset: EyeDataset, gaze_config: GazeConfig, opt):
-    corner = 'upper_right' if opt.eye == 'left' else 'upper_left'
-    frame_config = FrameDetectionConfig(triangle_corner=corner)
-
+def pupil_extraction_stage(eye_dataset: EyeDataset, frame_config: FrameDetectionConfig):
     pupil_centers, ellipses = extract_pupil_centers(eye_dataset.frame_list, config=frame_config)
     screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
+    return pupil_centers, ellipses, screen_coords
 
+
+def noise_flagging_stage(pupil_centers):
+    """
+    Flag noisy frames. Currently: frames where pupil detection failed (returned -1).
+    Returns a boolean mask in storage order (True = noisy/blink, discard).
+    """
+    return np.all(pupil_centers == -1, axis=1)
+
+
+def relabeling_stage(pupil_centers, screen_coords, gaze_config: GazeConfig):
+    """Relabel pre-saccade frames to previous label; discard active saccade frames."""
+    return relabel_transition_frames(
+        pupil_centers, screen_coords,
+        threshold=gaze_config.relabel_diff_threshold,
+        max_relabel_frames=gaze_config.relabel_max_frames,
+        stability_window=gaze_config.post_saccade_stability_window,
+    )
+
+
+def compute_phase_labels(screen_coords_original_chron, screen_coords_relabeled_chron,
+                         saccade_mask_chron, blink_mask_chron):
+    """
+    Classify each frame in the saccade section as 'A', 'B', 'C', or 'none'.
+    All inputs in chronological order.
+
+    Phase A: pre-saccade frame that was relabeled to the previous target
+    Phase B: active saccade frame (discarded)
+    Phase C: frame kept with the new label
+    """
+    n = len(screen_coords_original_chron)
+    phase = np.full(n, 'none', dtype=object)
+
+    sections = _find_sections(screen_coords_original_chron)
+    if not sections:
+        return phase
+    sac_start, sac_end = sections[0]
+
+    for i in range(sac_start, sac_end):
+        if saccade_mask_chron[i]:
+            phase[i] = 'B'
+        elif not np.array_equal(screen_coords_original_chron[i], screen_coords_relabeled_chron[i]):
+            phase[i] = 'A'
+        else:
+            phase[i] = 'C'
+
+    return phase
+
+
+def run_pipeline(opt):
+    eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
+    eye_index = 0 if opt.eye == 'left' else 1
+    corner = 'upper_right' if opt.eye == 'left' else 'upper_left'
+    frame_config = FrameDetectionConfig(triangle_corner=corner)
+    gaze_config = GazeConfig()
+
+    print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
+    print('Loading data from ' + opt.data_dir)
+
+    with timer("Collection"):
+        eye_dataset.collect_data(eye=eye_index)
+
+    with timer("Pupil extraction"):
+        pupil_centers, ellipses, screen_coords = pupil_extraction_stage(eye_dataset, frame_config)
+
+    with timer("Noise flagging"):
+        blink_mask = noise_flagging_stage(pupil_centers)
+
+    saccade_mask = None
+    screen_coords_original = screen_coords.copy()
     if opt.relabel:
-        screen_coords, saccade_mask = relabel_transition_frames(
-            pupil_centers, screen_coords,
-            threshold=gaze_config.relabel_diff_threshold,
-            max_relabel_frames=gaze_config.relabel_max_frames,
+        with timer("Relabeling"):
+            screen_coords, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
+
+    valid_mask = build_valid_mask(
+        blink_mask, screen_coords,
+        skip_frames=gaze_config.saccade_skip_frames,
+        saccade_mask=saccade_mask,
+        skip_label_changes=not opt.relabel,
+        post_blink_skip_frames=gaze_config.post_blink_skip_frames,
+    )
+
+    if opt.relabel_diag and opt.relabel:
+        from data.visualization import plot_relabeling_diagnostic
+        phase_labels = compute_phase_labels(
+            screen_coords_original[::-1],
+            screen_coords[::-1],
+            saccade_mask[::-1],
+            blink_mask[::-1],
         )
-        valid_mask = build_valid_mask(pupil_centers, screen_coords,
-                                      skip_frames=gaze_config.saccade_skip_frames,
-                                      skip_label_changes=False,
-                                      blink_artifact_threshold=gaze_config.blink_artifact_threshold)
-        valid_mask &= ~saccade_mask
-    else:
-        valid_mask = build_valid_mask(pupil_centers, screen_coords,
-                                      skip_frames=gaze_config.saccade_skip_frames,
-                                      blink_artifact_threshold=gaze_config.blink_artifact_threshold)
+        plot_relabeling_diagnostic(pupil_centers[::-1], screen_coords_original[::-1],
+                                   phase_labels, blink_mask[::-1])
 
     if opt.video:
         write_ellipse_video(eye_dataset.frame_list, ellipses, screen_coords)
 
     if opt.f_browse:
-        sm = saccade_mask if opt.relabel else None
-        browse_ellipse_frames(eye_dataset.frame_list, ellipses, screen_coords, saccade_mask=sm)
+        browse_ellipse_frames(eye_dataset.frame_list, ellipses, screen_coords, saccade_mask=saccade_mask)
 
     if opt.pe_browse:
         browse_pupil_extraction(eye_dataset.frame_list, frame_config, screen_coords)
@@ -238,25 +290,6 @@ def pupil_center_extraction_stage(eye_dataset: EyeDataset, gaze_config: GazeConf
 
     if opt.diff_plot:
         plot_pupil_diffs(pupil_centers, screen_coords)
-
-    return pupil_centers, screen_coords, ellipses, valid_mask
-
-
-
-def run_pipeline(opt):
-    eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
-    eye_index = 0 if opt.eye == 'left' else 1
-
-    print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
-    print('Loading data from ' + opt.data_dir)
-
-    gaze_config = GazeConfig()
-
-    with timer("Collection"):
-        eye_dataset.collect_data(eye=eye_index)
-
-    with timer("Center extraction + Screen coordinates extraction"):
-        pupil_centers, screen_coords, ellipses, valid_mask = pupil_center_extraction_stage(eye_dataset, gaze_config, opt)
 
     with timer("Model training"):
         if opt.model == 'regressor':

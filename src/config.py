@@ -4,7 +4,7 @@ from dataclasses import dataclass
 class FrameDetectionConfig:
     threshold: int = 10
     morph_kernel_size: int = 2
-    min_aspect_ratio: float = 0.35
+    min_aspect_ratio: float = 0.32
     min_axis_px: int = 0            # Currently not in use
     max_axis_px: int = 120          # Currently not in use
     center_min: tuple = None        # (x_min, y_min) accepted pupil center in px; None = no limit
@@ -31,9 +31,10 @@ class GazeConfig:
     train_ratio: float = 0.8
     val_ratio: float = 0.2
     saccade_skip_frames: int = 20
-    relabel_diff_threshold: float = 3.0  # px; eye displacement below this = stable fixation
+    relabel_diff_threshold: float = 1.5  # px; eye displacement below this = stable fixation
     relabel_max_frames: int = 20         # safety cap: never relabel more than this many frames per label change
-    blink_artifact_threshold: float = None  # px; spike-and-return above this = partial blink artifact
+    post_blink_skip_frames: int = 1      # valid frames to discard after each blink run
+    post_saccade_stability_window: int = 6  # consecutive stable frames required before Phase C begins
 
 @dataclass
 class LSTMConfig:
