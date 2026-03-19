@@ -91,7 +91,7 @@ def extract_pupil_centers(frame_list, config: FrameDetectionConfig = None):
     ellipses = [None] * n
     # Index 0 is invalid, so we start from 1
     for idx in tqdm(range(1, n)):
-        center, ellipse = extract_pupil(frame_list[idx], config=config, visualize=False)
+        center, ellipse = extract_pupil(frame_list[idx], config=config)
         pupil_centers[idx] = center
         ellipses[idx] = ellipse
     return pupil_centers, ellipses
