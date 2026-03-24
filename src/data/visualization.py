@@ -284,7 +284,8 @@ def write_ellipse_video(frame_list, ellipses, screen_coords, output_path='ellips
     print(f'Video written to {output_path}')
 
 
-def plot_gaze_predictions(screen_pred, screen_gt, title='Gaze prediction vs ground truth'):
+def plot_gaze_predictions(screen_pred, screen_gt, title='Gaze prediction vs ground truth',
+                          fov_rect=None):
     """
     Scatter of GT vs predicted gaze points on the screen plane with error vectors,
     plus an error distribution panel.
@@ -293,6 +294,7 @@ def plot_gaze_predictions(screen_pred, screen_gt, title='Gaze prediction vs grou
         screen_pred: (N, 2) predicted screen coords (row, col)
         screen_gt:   (N, 2) ground-truth screen coords (row, col)
         title:       figure suptitle
+        fov_rect:    optional (row_min, row_max, col_min, col_max) to draw FoV boundary
     """
     screen_pred = np.asarray(screen_pred)
     screen_gt   = np.asarray(screen_gt)
@@ -320,6 +322,13 @@ def plot_gaze_predictions(screen_pred, screen_gt, title='Gaze prediction vs grou
     ax.set_xlabel('Screen col (px)')
     ax.set_ylabel('Screen row (px)')
     ax.invert_yaxis()
+    if fov_rect is not None:
+        import matplotlib.patches as mpatches
+        row_min, row_max, col_min, col_max = fov_rect
+        ax.add_patch(mpatches.Rectangle(
+            (col_min, row_min), col_max - col_min, row_max - row_min,
+            linewidth=1.5, edgecolor='lime', facecolor='none', zorder=4, label='FoV window'
+        ))
     ax.set_title('Screen plane  —  GT (×) vs predicted (●)')
     ax.legend(loc='upper right', fontsize=8)
     ax.grid(True, alpha=0.3)

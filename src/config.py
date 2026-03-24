@@ -35,6 +35,10 @@ class GazeConfig:
     relabel_max_frames: int = 20         # safety cap: never relabel more than this many frames per label change
     post_blink_skip_frames: int = 1      # valid frames to discard after each blink run
     post_saccade_stability_window: int = 6  # consecutive stable frames required before Phase C begins
+    screen_width_px: int = 1920
+    screen_height_px: int = 1080
+    screen_fov_x_deg: float = 85.0       # full horizontal FoV of the screen in degrees
+    screen_fov_y_deg: float = 48.0       # full vertical FoV of the screen in degrees
 
 @dataclass
 class LSTMConfig:

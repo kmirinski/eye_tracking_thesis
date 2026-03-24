@@ -27,6 +27,9 @@ parser.add_argument('--diff_plot', action='store_true',
                     help='plot frame-to-frame pupil displacement over time with label-change markers')
 parser.add_argument('--relabel_diag', action='store_true',
                     help='plot relabeling phase diagnostic (requires --relabel)')
+parser.add_argument('--fov', type=float, nargs=2, metavar=('WIDTH_DEG', 'HEIGHT_DEG'),
+                    default=None,
+                    help='restrict training to a centered FoV window in degrees, e.g. --fov 20 40')
 
 
 
