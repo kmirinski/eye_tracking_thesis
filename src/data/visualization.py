@@ -302,6 +302,7 @@ def plot_gaze_predictions(screen_pred, screen_gt, title='Gaze prediction vs grou
     euclidean = np.sqrt(np.sum((screen_pred - screen_gt) ** 2, axis=1))
     sort_idx = np.argsort(euclidean)  # draw worst-error vectors on top
 
+    plt.rcParams.update({'font.size': 13})
     fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=200)
 
     # --- Left: screen-plane scatter ---
@@ -330,21 +331,39 @@ def plot_gaze_predictions(screen_pred, screen_gt, title='Gaze prediction vs grou
             linewidth=1.5, edgecolor='lime', facecolor='none', zorder=4, label='FoV window'
         ))
     ax.set_title('Screen plane  —  GT (×) vs predicted (●)')
-    ax.legend(loc='upper right', fontsize=8)
+    ax.legend(loc='upper right')
     ax.grid(True, alpha=0.3)
 
-    # --- Right: error distribution ---
+    # --- Right: annotated matrix heatmap of mean error per label ---
     ax2 = axes[1]
-    ax2.hist(euclidean, bins=40, color='steelblue', edgecolor='white', linewidth=0.4)
-    ax2.axvline(np.mean(euclidean),   color='red',    linestyle='--', label=f'mean  {np.mean(euclidean):.1f}')
-    ax2.axvline(np.median(euclidean), color='orange', linestyle='--', label=f'median {np.median(euclidean):.1f}')
-    ax2.set_xlabel('Euclidean error (px)')
-    ax2.set_ylabel('Count')
-    ax2.set_title('Error distribution')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
+    unique_labels, label_inv = np.unique(screen_gt, axis=0, return_inverse=True)
+    mean_err_per_label = np.array([
+        euclidean[label_inv == i].mean() for i in range(len(unique_labels))
+    ])
+    unique_rows = np.unique(unique_labels[:, 0])
+    unique_cols = np.unique(unique_labels[:, 1])
+    matrix = np.full((len(unique_rows), len(unique_cols)), np.nan)
+    row_idx = {r: i for i, r in enumerate(unique_rows)}
+    col_idx = {c: i for i, c in enumerate(unique_cols)}
+    for (r, c), err in zip(unique_labels, mean_err_per_label):
+        matrix[row_idx[r], col_idx[c]] = err
+    im = ax2.imshow(matrix, cmap='plasma', aspect='auto', vmin=0)
+    fig.colorbar(im, ax=ax2, label='Mean Euclidean error (px)')
+    for ri in range(matrix.shape[0]):
+        for ci in range(matrix.shape[1]):
+            val = matrix[ri, ci]
+            if not np.isnan(val):
+                ax2.text(ci, ri, f'{val:.0f}', ha='center', va='center',
+                         fontsize=10, color='black')
+    ax2.set_xticks(range(len(unique_cols)))
+    ax2.set_xticklabels([f'{int(c)}' for c in unique_cols], rotation=45, ha='right')
+    ax2.set_yticks(range(len(unique_rows)))
+    ax2.set_yticklabels([f'{int(r)}' for r in unique_rows])
+    ax2.set_xlabel('Screen col (px)')
+    ax2.set_ylabel('Screen row (px)')
+    ax2.set_title('Mean error per ground-truth label (px)')
 
-    plt.suptitle(title, fontsize=12)
+    plt.suptitle(title, fontsize=15)
     plt.tight_layout()
     plt.show()
 
