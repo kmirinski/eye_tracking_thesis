@@ -13,6 +13,23 @@ class FrameDetectionConfig:
     triangle_size: int = 80         # leg length in px of the corner triangle to exclude
     min_ellipse_area: float = 210   # π * (w/2) * (h/2) in px²
 
+
+# Per-subject overrides for FrameDetectionConfig.
+# Only list fields that differ from the dataclass defaults above.
+SUBJECT_FRAME_DETECTION_OVERRIDES: dict = {
+    # example:
+    # 3:  {"threshold": 15, "min_ellipse_area": 150},
+    # 22: {"min_aspect_ratio": 0.28},
+}
+
+
+def get_frame_detection_config(subject: int, eye: str) -> FrameDetectionConfig:
+    """Return a FrameDetectionConfig with defaults + per-subject overrides applied."""
+    corner = 'upper_right' if eye == 'left' else 'upper_left'
+    overrides = SUBJECT_FRAME_DETECTION_OVERRIDES.get(subject, {})
+    return FrameDetectionConfig(triangle_corner=corner, **overrides)
+
+
 @dataclass
 class TrackingConfig:
     num_events: int = 2000
@@ -39,6 +56,21 @@ class GazeConfig:
     screen_height_px: int = 1080
     screen_fov_x_deg: float = 85.0       # full horizontal FoV of the screen in degrees
     screen_fov_y_deg: float = 48.0       # full vertical FoV of the screen in degrees
+
+
+# Per-subject overrides for GazeConfig.
+# Only list fields that differ from the dataclass defaults above.
+SUBJECT_GAZE_OVERRIDES: dict = {
+    # example:
+    # 3:  {"saccade_skip_frames": 30, "relabel_diff_threshold": 1.2},
+}
+
+
+def get_gaze_config(subject: int) -> GazeConfig:
+    """Return a GazeConfig with defaults + per-subject overrides applied."""
+    overrides = SUBJECT_GAZE_OVERRIDES.get(subject, {})
+    return GazeConfig(**overrides)
+
 
 @dataclass
 class LSTMConfig:

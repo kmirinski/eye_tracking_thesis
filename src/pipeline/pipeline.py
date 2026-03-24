@@ -4,7 +4,7 @@ from data.visualization import write_ellipse_video, browse_ellipse_frames, brows
 from utils import timer
 from data.loaders import EyeDataset
 from processing.frame_detection import extract_pupil_centers
-from config import FrameDetectionConfig, GazeConfig
+from config import FrameDetectionConfig, get_frame_detection_config, GazeConfig, get_gaze_config
 from pipeline.runners import run_regressor, run_lstm
 
 
@@ -234,9 +234,8 @@ def compute_phase_labels(screen_coords_original_chron, screen_coords_relabeled_c
 def run_pipeline(opt):
     eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
     eye_index = 0 if opt.eye == 'left' else 1
-    corner = 'upper_right' if opt.eye == 'left' else 'upper_left'
-    frame_config = FrameDetectionConfig(triangle_corner=corner)
-    gaze_config = GazeConfig()
+    frame_config = get_frame_detection_config(opt.subject, opt.eye)
+    gaze_config = get_gaze_config(opt.subject)
 
     print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
     print('Loading data from ' + opt.data_dir)

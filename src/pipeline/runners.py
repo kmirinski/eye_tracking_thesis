@@ -62,6 +62,12 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
     pupil_centers = np.round(pupil_centers[valid_mask], 2)
     screen_coords = np.round(screen_coords[valid_mask], 2)
 
+    if opt.fov is not None:
+        fov_w, fov_h = opt.fov
+        fov_mask = fov_filter_mask(screen_coords, fov_w, fov_h, gaze_config)
+        pupil_centers = pupil_centers[fov_mask]
+        screen_coords = screen_coords[fov_mask]
+
     pupil_train, pupil_val, screen_train, screen_val = split_by_label(
         pupil_centers, screen_coords, val_ratio=gaze_config.val_ratio
     )
@@ -74,12 +80,7 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
         gaze_estimator = GazeEstimator(degree=deg)
         gaze_estimator.fit(pupil_train, screen_train)
 
-        if opt.fov is not None:
-            fov_w, fov_h = opt.fov
-            fov_mask = fov_filter_mask(screen_val, fov_w, fov_h, gaze_config)
-            eval_pupil, eval_screen = pupil_val[fov_mask], screen_val[fov_mask]
-        else:
-            eval_pupil, eval_screen = pupil_val, screen_val
+        eval_pupil, eval_screen = pupil_val, screen_val
 
         val_metrics = gaze_estimator.evaluate(eval_pupil, eval_screen)
         print(f"Validation RMSE: {val_metrics['rmse']:.2f} pixels")
@@ -99,6 +100,11 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     )
     print(f"Total windows: {len(X)}  (shape {X.shape})")
 
+    if opt.fov is not None:
+        fov_w, fov_h = opt.fov
+        fov_mask = fov_filter_mask(y, fov_w, fov_h, gaze_config)
+        X, y = X[fov_mask], y[fov_mask]
+
     n = len(X)
     n_train = int(n * gaze_config.train_ratio)
     n_val   = int(n * gaze_config.val_ratio)
@@ -112,12 +118,7 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     lstm_estimator = LSTMGazeEstimator(lstm_config)
     lstm_estimator.fit(X_train, y_train, X_val, y_val)
 
-    if opt.fov is not None:
-        fov_w, fov_h = opt.fov
-        fov_mask = fov_filter_mask(y_val, fov_w, fov_h, gaze_config)
-        eval_X, eval_y = X_val[fov_mask], y_val[fov_mask]
-    else:
-        eval_X, eval_y = X_val, y_val
+    eval_X, eval_y = X_val, y_val
 
     val_metrics = lstm_estimator.evaluate(eval_X, eval_y)
     print(f"Validation RMSE:       {val_metrics['rmse']:.2f} pixels")
