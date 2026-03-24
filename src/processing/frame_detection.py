@@ -10,10 +10,8 @@ def ellipse_area(ellipse) -> float:
     return np.pi * (w / 2) * (h / 2)
 
 
-def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=True):
-    if config is None:
-        config = FrameDetectionConfig()
-
+def _run_detection(frame: Frame, config: FrameDetectionConfig):
+    """Run the full detection pipeline and return all intermediate stages."""
     img = cv2.imread(frame.img)
 
     if len(img.shape) == 3:
@@ -41,23 +39,16 @@ def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=T
         if minor > major:
             minor, major = major, minor
         aspect_ratio = minor / major if major > 0 else 0
-        # print(aspect_ratio)
 
         cx, cy = ellipse[0]
         area = ellipse_area(ellipse)
-        valid = (
-            aspect_ratio >= config.min_aspect_ratio and
-            major >= config.min_axis_px and
-            major <= config.max_axis_px and
-            area >= config.min_ellipse_area
-        )
 
-        # Optional bounding box
+        valid = (aspect_ratio >= config.min_aspect_ratio and area >= config.min_ellipse_area)
+
         if config.center_min is not None:
             valid = valid and config.center_min[0] < cx <= config.center_max[0]
             valid = valid and config.center_min[1] < cy <= config.center_max[1]
 
-        # Corner triangle exclusion
         if config.triangle_corner == 'upper_right':
             W = img.shape[1]
             in_triangle = (cx - cy >= W - config.triangle_size)
@@ -79,8 +70,14 @@ def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=T
 
     selected_points = best_contour.reshape(-1, 2) if best_contour is not None else np.zeros((0, 2), dtype=np.int32)
 
-    if visualize:
-        visualize_detection(img, binary, opened, contour_img, selected_points, best_ellipse)
+    return img, binary, opened, contour_img, selected_points, best_ellipse
+
+
+def extract_pupil(frame: Frame, config: FrameDetectionConfig = None):
+    if config is None:
+        config = FrameDetectionConfig()
+
+    _, _, _, _, _, best_ellipse = _run_detection(frame, config)
 
     if best_ellipse is not None:
         return np.array(best_ellipse[0], dtype=np.float32), best_ellipse
@@ -88,58 +85,13 @@ def extract_pupil(frame: Frame, config: FrameDetectionConfig = None, visualize=T
         return np.array((-1, -1), dtype=np.float32), None
 
 
-def visualize_detection(img, binary, opened, contour_img, candidate_points, ellipse):
-    import matplotlib.pyplot as plt
-
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10), dpi=150)
-
-    axes[0, 0].imshow(img, cmap='gray')
-    axes[0, 0].set_title('Original Image')
-    axes[0, 0].axis('off')
-
-    # Binarized image
-    axes[0, 1].imshow(binary, cmap='gray')
-    axes[0, 1].set_title('Binarized (Hθ)')
-    axes[0, 1].axis('off')
-
-    # After morphological opening
-    axes[0, 2].imshow(opened, cmap='gray')
-    axes[0, 2].set_title('After Opening (◦ Sσ)')
-    axes[0, 2].axis('off')
-
-    axes[1, 0].imshow(contour_img, cmap='gray')
-    axes[1, 0].set_title('Contours')
-    axes[1, 0].axis('off')
-
-    axes[1, 1].imshow(img, cmap='gray')
-    if len(candidate_points) > 0:
-        axes[1, 1].scatter(candidate_points[:, 0], candidate_points[:, 1],
-                          c='red', s=1, alpha=0.5)
-    axes[1, 1].set_title(f'Selected Contour ({len(candidate_points)} points)')
-    axes[1, 1].axis('off')
-
-    img_with_ellipse = img.copy()
-    if ellipse is not None:
-        cv2.ellipse(img_with_ellipse, ellipse, 255, 1)
-
-    axes[1, 2].imshow(img_with_ellipse, cmap='gray')
-    if ellipse is not None:
-        center = (int(ellipse[0][0]), int(ellipse[0][1]))
-        axes[1, 2].set_title(f'Fitted Ellipse\nCenter: {center}')
-    else:
-        axes[1, 2].set_title('No Ellipse Fitted')
-    axes[1, 2].axis('off')
-
-    plt.tight_layout()
-    plt.show()
-
 def extract_pupil_centers(frame_list, config: FrameDetectionConfig = None):
     n = len(frame_list)
     pupil_centers = np.zeros((n, 2))
     ellipses = [None] * n
     # Index 0 is invalid, so we start from 1
     for idx in tqdm(range(1, n)):
-        center, ellipse = extract_pupil(frame_list[idx], config=config, visualize=False)
+        center, ellipse = extract_pupil(frame_list[idx], config=config)
         pupil_centers[idx] = center
         ellipses[idx] = ellipse
     return pupil_centers, ellipses

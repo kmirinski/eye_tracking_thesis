@@ -52,6 +52,7 @@ class GazeEstimator:
         euclidean_errors = np.sqrt(np.sum(errors ** 2, axis=1))
 
         metrics = {
+            'mse': np.mean(np.sum(errors ** 2, axis=1)),
             'rmse': np.sqrt(np.mean(np.sum(errors ** 2, axis=1))),
             'mean_error': np.mean(euclidean_errors),
             'std_error': np.std(euclidean_errors),

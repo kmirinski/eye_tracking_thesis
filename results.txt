@@ -1,0 +1,171 @@
+
+=== SUMMARY ===
+
+
+=== Subject 4 ===
+Validation Mean Error: 294.23 pixels
+Validation Mean Error: 286.36 pixels
+Validation Mean Error: 289.64 pixels
+Validation Mean Error: 282.52 pixels
+
+
+=== Subject 5 ===
+Validation Mean Error: 69.47 pixels
+Validation Mean Error: 67.74 pixels
+Validation Mean Error: 65.82 pixels
+Validation Mean Error: 64.61 pixels
+
+
+=== Subject 6 ===
+Validation Mean Error: 37.84 pixels
+Validation Mean Error: 37.52 pixels
+Validation Mean Error: 36.84 pixels
+Validation Mean Error: 37.12 pixels
+
+
+=== Subject 7 ===
+Validation Mean Error: 30.73 pixels
+Validation Mean Error: 30.70 pixels
+Validation Mean Error: 29.11 pixels
+Validation Mean Error: 28.11 pixels
+
+
+=== Subject 8 ===
+Validation Mean Error: 67.99 pixels
+Validation Mean Error: 68.01 pixels
+Validation Mean Error: 67.80 pixels
+Validation Mean Error: 67.83 pixels
+
+
+=== Subject 9 ===
+Validation Mean Error: 49.77 pixels
+Validation Mean Error: 48.47 pixels
+Validation Mean Error: 47.79 pixels
+Validation Mean Error: 47.54 pixels
+
+
+=== Subject 10 ===
+Validation Mean Error: 56.10 pixels
+Validation Mean Error: 55.53 pixels
+Validation Mean Error: 55.07 pixels
+Validation Mean Error: 55.14 pixels
+
+
+=== Subject 11 ===
+Validation Mean Error: 42.25 pixels
+Validation Mean Error: 45.87 pixels
+Validation Mean Error: 41.09 pixels
+Validation Mean Error: 39.71 pixels
+
+
+=== Subject 12 ===
+Validation Mean Error: 38.52 pixels
+Validation Mean Error: 38.87 pixels
+Validation Mean Error: 39.09 pixels
+Validation Mean Error: 39.16 pixels
+
+
+
+=== Subject 13 ===
+Validation Mean Error: 55.91 pixels
+Validation Mean Error: 55.23 pixels
+Validation Mean Error: 54.01 pixels
+Validation Mean Error: 53.58 pixels
+
+
+=== Subject 14 ===
+Validation Mean Error: 62.08 pixels
+Validation Mean Error: 60.17 pixels
+Validation Mean Error: 59.85 pixels
+Validation Mean Error: 59.98 pixels
+
+
+=== Subject 15 ===
+Validation Mean Error: 20.47 pixels
+Validation Mean Error: 20.41 pixels
+Validation Mean Error: 19.97 pixels
+Validation Mean Error: 20.05 pixels
+
+
+=== Subject 16 ===
+Validation Mean Error: 51.78 pixels
+Validation Mean Error: 51.39 pixels
+Validation Mean Error: 51.14 pixels
+Validation Mean Error: 50.66 pixels
+
+
+=== Subject 17 ===
+Validation Mean Error: 80.21 pixels
+Validation Mean Error: 596.72 pixels
+Validation Mean Error: 1637.85 pixels
+Validation Mean Error: 7728.55 pixels
+
+
+=== Subject 18 ===
+Validation Mean Error: 34.64 pixels
+Validation Mean Error: 34.21 pixels
+Validation Mean Error: 33.53 pixels
+Validation Mean Error: 33.43 pixels
+
+
+=== Subject 19 ===
+Validation Mean Error: 31.52 pixels
+Validation Mean Error: 31.61 pixels
+Validation Mean Error: 31.27 pixels
+Validation Mean Error: 31.38 pixels
+
+
+=== Subject 20 ===
+Validation Mean Error: 126.89 pixels
+Validation Mean Error: 127.34 pixels
+Validation Mean Error: 127.26 pixels
+Validation Mean Error: 126.05 pixels
+
+
+=== Subject 21 ===
+Validation Mean Error: 38.10 pixels
+Validation Mean Error: 34.79 pixels
+Validation Mean Error: 34.50 pixels
+Validation Mean Error: 34.62 pixels
+
+
+=== Subject 22 ===
+Validation Mean Error: 36.90 pixels
+Validation Mean Error: 35.46 pixels
+Validation Mean Error: 34.58 pixels
+Validation Mean Error: 34.05 pixels
+
+
+=== Subject 23 ===
+Validation Mean Error: 64.77 pixels
+Validation Mean Error: 64.10 pixels
+Validation Mean Error: 63.63 pixels
+Validation Mean Error: 63.35 pixels
+
+
+=== Subject 24 ===
+Validation Mean Error: 85.25 pixels
+Validation Mean Error: 83.07 pixels
+Validation Mean Error: 81.34 pixels
+Validation Mean Error: 80.94 pixels
+
+
+=== Subject 25 ===
+Validation Mean Error: 47.13 pixels
+Validation Mean Error: 47.03 pixels
+Validation Mean Error: 46.70 pixels
+Validation Mean Error: 46.67 pixels
+
+
+=== Subject 26 ===
+Validation Mean Error: 74.15 pixels
+Validation Mean Error: 73.60 pixels
+Validation Mean Error: 72.85 pixels
+Validation Mean Error: 72.03 pixels
+
+
+=== Subject 27 ===
+Validation Mean Error: 47.72 pixels
+Validation Mean Error: 47.46 pixels
+Validation Mean Error: 47.82 pixels
+Validation Mean Error: 48.63 pixels

@@ -16,9 +16,20 @@ parser.add_argument('--model', default="regressor", choices=['regressor', 'lstm'
 
 # Boolean flags
 parser.add_argument('--video', action='store_true')
-parser.add_argument('--frame_browser', action='store_true')
+parser.add_argument('--f_browse', action='store_true')
+parser.add_argument('--pe_browse', action='store_true',
+                    help='interactive browser showing pupil extraction stages for each frame')
 parser.add_argument("--pe_plots", action='store_true')
 parser.add_argument('--ge_plots', action='store_true')
+parser.add_argument('--relabel', action='store_true',
+                    help='relabel pre-saccade frames to previous label; discard active saccade frames')
+parser.add_argument('--diff_plot', action='store_true',
+                    help='plot frame-to-frame pupil displacement over time with label-change markers')
+parser.add_argument('--relabel_diag', action='store_true',
+                    help='plot relabeling phase diagnostic (requires --relabel)')
+parser.add_argument('--fov', type=float, nargs=2, metavar=('WIDTH_DEG', 'HEIGHT_DEG'),
+                    default=None,
+                    help='restrict training to a centered FoV window in degrees, e.g. --fov 20 40')
 
 
 

@@ -2,16 +2,16 @@ from dataclasses import dataclass
 
 @dataclass
 class FrameDetectionConfig:
-    threshold: int = 20
-    morph_kernel_size: int = 3
-    min_aspect_ratio: float = 0.37
-    min_axis_px: int = 0
-    max_axis_px: int = 120
-    center_min: tuple = None      # (x_min, y_min) accepted pupil center in px; None = no limit
-    center_max: tuple = None      # (x_max, y_max) accepted pupil center in px; None = no limit
-    triangle_corner: str = None   # 'upper_right' (left eye) or 'upper_left' (right eye)
-    triangle_size: int = 80       # leg length in px of the corner triangle to exclude
-    min_ellipse_area: float = 210  # π * (w/2) * (h/2) in px²
+    threshold: int = 10
+    morph_kernel_size: int = 2
+    min_aspect_ratio: float = 0.32
+    min_axis_px: int = 0            # Currently not in use
+    max_axis_px: int = 120          # Currently not in use
+    center_min: tuple = None        # (x_min, y_min) accepted pupil center in px; None = no limit
+    center_max: tuple = None        # (x_max, y_max) accepted pupil center in px; None = no limit
+    triangle_corner: str = None     # 'upper_right' (left eye) or 'upper_left' (right eye)
+    triangle_size: int = 80         # leg length in px of the corner triangle to exclude
+    min_ellipse_area: float = 210   # π * (w/2) * (h/2) in px²
 
 @dataclass
 class TrackingConfig:
@@ -31,6 +31,14 @@ class GazeConfig:
     train_ratio: float = 0.8
     val_ratio: float = 0.2
     saccade_skip_frames: int = 20
+    relabel_diff_threshold: float = 1.5  # px; eye displacement below this = stable fixation
+    relabel_max_frames: int = 20         # safety cap: never relabel more than this many frames per label change
+    post_blink_skip_frames: int = 1      # valid frames to discard after each blink run
+    post_saccade_stability_window: int = 6  # consecutive stable frames required before Phase C begins
+    screen_width_px: int = 1920
+    screen_height_px: int = 1080
+    screen_fov_x_deg: float = 85.0       # full horizontal FoV of the screen in degrees
+    screen_fov_y_deg: float = 48.0       # full vertical FoV of the screen in degrees
 
 @dataclass
 class LSTMConfig:
