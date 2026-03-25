@@ -29,7 +29,10 @@ parser.add_argument('--relabel_diag', action='store_true',
                     help='plot relabeling phase diagnostic (requires --relabel)')
 parser.add_argument('--fov', type=float, nargs=2, metavar=('WIDTH_DEG', 'HEIGHT_DEG'),
                     default=None,
-                    help='restrict training to a centered FoV window in degrees, e.g. --fov 20 40')
+                    help='restrict training to a centered FoV window in degrees, e.g. --fov 40 20')
+parser.add_argument('--fov_center', type=float, nargs=2, metavar=('ROW', 'COL'),
+                    default=None,
+                    help='center of FoV window in screen pixels (row col); defaults to screen center')
 
 
 

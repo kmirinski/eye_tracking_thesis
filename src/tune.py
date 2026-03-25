@@ -40,7 +40,7 @@ FRAME_DETECTION_GRID = {
 }
 
 
-def tune(subject, eye, data_dir, fov=None, relabel=False):
+def tune(subject, eye, data_dir, fov=None, fov_center=None, relabel=False):
     eye_index    = 0 if eye == 'left' else 1
     base_config  = get_frame_detection_config(subject, eye)
     gaze_config  = get_gaze_config(subject)
@@ -84,7 +84,7 @@ def tune(subject, eye, data_dir, fov=None, relabel=False):
         scv = np.round(sc[valid_mask], 2)
 
         if fov is not None:
-            fov_mask = fov_filter_mask(scv, fov[0], fov[1], gaze_config)
+            fov_mask = fov_filter_mask(scv, fov[0], fov[1], gaze_config, center=fov_center)
             pc, scv = pc[fov_mask], scv[fov_mask]
 
         if len(pc) < 10:
@@ -114,8 +114,9 @@ if __name__ == '__main__':
     parser.add_argument('--subject',  type=int, default=22)
     parser.add_argument('--eye',      default='left', choices=['left', 'right'])
     parser.add_argument('--data_dir', default=os.path.join(os.getcwd(), 'eye_data'))
-    parser.add_argument('--fov',      type=float, nargs=2, default=None, metavar=('WIDTH_DEG', 'HEIGHT_DEG'))
-    parser.add_argument('--relabel',  action='store_true')
+    parser.add_argument('--fov',        type=float, nargs=2, default=None, metavar=('WIDTH_DEG', 'HEIGHT_DEG'))
+    parser.add_argument('--fov_center', type=float, nargs=2, default=None, metavar=('ROW', 'COL'))
+    parser.add_argument('--relabel',    action='store_true')
     opt = parser.parse_args()
 
-    tune(opt.subject, opt.eye, opt.data_dir, fov=opt.fov, relabel=opt.relabel)
+    tune(opt.subject, opt.eye, opt.data_dir, fov=opt.fov, fov_center=opt.fov_center, relabel=opt.relabel)

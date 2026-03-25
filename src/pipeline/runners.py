@@ -6,13 +6,16 @@ from models.lstm import LSTMGazeEstimator, build_lstm_sequences
 from config import GazeConfig, LSTMConfig
 
 
-def fov_filter_mask(screen_coords, fov_width_deg, fov_height_deg, gaze_config):
+def fov_filter_mask(screen_coords, fov_width_deg, fov_height_deg, gaze_config, center=None):
     px_per_deg_x = gaze_config.screen_width_px / gaze_config.screen_fov_x_deg
     px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
     half_w_px = (fov_width_deg / 2) * px_per_deg_x
     half_h_px = (fov_height_deg / 2) * px_per_deg_y
-    center_row = gaze_config.screen_height_px / 2
-    center_col = gaze_config.screen_width_px / 2
+    if center is None:
+        center_row = gaze_config.screen_height_px / 2
+        center_col = gaze_config.screen_width_px / 2
+    else:
+        center_row, center_col = center
     rows = screen_coords[:, 0]
     cols = screen_coords[:, 1]
     return (np.abs(rows - center_row) <= half_h_px) & (np.abs(cols - center_col) <= half_w_px)
@@ -27,8 +30,11 @@ def _fov_rect(opt, gaze_config):
     px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
     half_w = (fov_w_deg / 2) * px_per_deg_x
     half_h = (fov_h_deg / 2) * px_per_deg_y
-    cr = gaze_config.screen_height_px / 2
-    cc = gaze_config.screen_width_px / 2
+    if opt.fov_center is None:
+        cr = gaze_config.screen_height_px / 2
+        cc = gaze_config.screen_width_px / 2
+    else:
+        cr, cc = opt.fov_center
     return (cr - half_h, cr + half_h, cc - half_w, cc + half_w)
 
 
@@ -64,7 +70,7 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
 
     if opt.fov is not None:
         fov_w, fov_h = opt.fov
-        fov_mask = fov_filter_mask(screen_coords, fov_w, fov_h, gaze_config)
+        fov_mask = fov_filter_mask(screen_coords, fov_w, fov_h, gaze_config, center=opt.fov_center)
         pupil_centers = pupil_centers[fov_mask]
         screen_coords = screen_coords[fov_mask]
 
@@ -102,7 +108,7 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
 
     if opt.fov is not None:
         fov_w, fov_h = opt.fov
-        fov_mask = fov_filter_mask(y, fov_w, fov_h, gaze_config)
+        fov_mask = fov_filter_mask(y, fov_w, fov_h, gaze_config, center=opt.fov_center)
         X, y = X[fov_mask], y[fov_mask]
 
     n = len(X)
