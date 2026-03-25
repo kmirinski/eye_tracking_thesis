@@ -1,4 +1,9 @@
-cd /home/kmirinski/uni/msc/thesis/eye_tracking_thesis
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
 source .venv/bin/activate
 
 RESULTS="results.txt"

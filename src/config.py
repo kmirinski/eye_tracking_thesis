@@ -2,15 +2,15 @@ from dataclasses import dataclass
 
 @dataclass
 class FrameDetectionConfig:
-    threshold: int = 10
-    morph_kernel_size: int = 2
+    threshold: int = 15
+    morph_kernel_size: int = 3
     min_aspect_ratio: float = 0.32
     min_axis_px: int = 0            # Currently not in use
     max_axis_px: int = 120          # Currently not in use
     center_min: tuple = None        # (x_min, y_min) accepted pupil center in px; None = no limit
     center_max: tuple = None        # (x_max, y_max) accepted pupil center in px; None = no limit
     triangle_corner: str = None     # 'upper_right' (left eye) or 'upper_left' (right eye)
-    triangle_size: int = 80         # leg length in px of the corner triangle to exclude
+    triangle_size: int = 100         # leg length in px of the corner triangle to exclude
     min_ellipse_area: float = 210   # π * (w/2) * (h/2) in px²
 
 
@@ -18,8 +18,18 @@ class FrameDetectionConfig:
 # Only list fields that differ from the dataclass defaults above.
 SUBJECT_FRAME_DETECTION_OVERRIDES: dict = {
     # example:
-    # 3:  {"threshold": 15, "min_ellipse_area": 150},
-    # 22: {"min_aspect_ratio": 0.28},
+    4:  {"threshold": 10, "morph_kernel_size": 4, 'min_aspect_ratio': 0.38, "triangle_size": 150},
+    5:  {"threshold": 13, "morph_kernel_size": 3},
+    6: {'threshold': 10, 'morph_kernel_size': 4, 'min_aspect_ratio': 0.25},
+    7: {'threshold': 10, 'morph_kernel_size': 2, 'min_aspect_ratio': 0.25},
+    11: {'threshold': 15, 'morph_kernel_size': 3, 'min_aspect_ratio': 0.25},
+    12: {'threshold': 15, 'morph_kernel_size': 3, 'min_aspect_ratio': 0.25},
+    15: {'threshold': 25, 'morph_kernel_size': 2, 'min_aspect_ratio': 0.38},
+    18: {'threshold': 20, 'morph_kernel_size': 2, 'min_aspect_ratio': 0.25},
+    19: {'threshold': 15, 'morph_kernel_size': 2, 'min_aspect_ratio': 0.25},
+    21: {'threshold': 10, 'morph_kernel_size': 4, 'min_aspect_ratio': 0.25},
+    22: {'threshold': 10, 'morph_kernel_size': 4, 'min_aspect_ratio': 0.25},
+
 }
 
 
@@ -54,8 +64,8 @@ class GazeConfig:
     post_saccade_stability_window: int = 6  # consecutive stable frames required before Phase C begins
     screen_width_px: int = 1920
     screen_height_px: int = 1080
-    screen_fov_x_deg: float = 85.0       # full horizontal FoV of the screen in degrees
-    screen_fov_y_deg: float = 48.0       # full vertical FoV of the screen in degrees
+    screen_fov_x_deg: float = 96.0       # full horizontal FoV of the screen in degrees
+    screen_fov_y_deg: float = 64.0       # full vertical FoV of the screen in degrees
 
 
 # Per-subject overrides for GazeConfig.

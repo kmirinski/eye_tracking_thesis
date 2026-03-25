@@ -3,5 +3,12 @@ eye_data/
 
 __pycache__/
 plots/
+data_cache/
 
+
+# Videos
 *.mp4
+
+# Files
+frames_to_video.py
+cross_subject_lstm.py
