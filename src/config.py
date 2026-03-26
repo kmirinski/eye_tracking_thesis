@@ -54,7 +54,7 @@ class KDEConfig:
 
 @dataclass
 class GazeConfig:
-    poly_degrees: list = (5, 6, 7, 8)
+    poly_degrees: list = (5, 6, 7, 8, 12)
     train_ratio: float = 0.8
     val_ratio: float = 0.2
     saccade_skip_frames: int = 20
@@ -88,6 +88,8 @@ class LSTMConfig:
     lstm_units: int = 128
     dense_units: tuple = (64, 32, 16)
     l1_reg: float = 1e-4
-    epochs: int = 100
-    batch_size: int = 32
-    learning_rate: float = 1e-3
+    epochs: int = 50
+    batch_size: int = 10
+    learning_rate: float = 2e-4
+    lr_decay_rate: float = 0.98
+    lr_decay_steps: int = 1000

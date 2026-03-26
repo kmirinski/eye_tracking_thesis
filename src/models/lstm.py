@@ -74,8 +74,9 @@ def build_lstm_sequences(ellipses, screen_coords, valid_mask, seq_len=10):
 
 class LSTMGazeEstimator:
 
-    def __init__(self, config: LSTMConfig = None):
+    def __init__(self, config: LSTMConfig = None, pre_scaled: bool = False):
         self.config = config or LSTMConfig()
+        self.pre_scaled = pre_scaled
         self.scaler = StandardScaler()
         self.model = None
         self.is_fitted = False
@@ -101,14 +102,21 @@ class LSTMGazeEstimator:
         outputs = layers.Dense(2, kernel_regularizer=l1)(x)
 
         model = keras.Model(inputs, outputs)
+        lr_schedule = keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=cfg.learning_rate,
+            decay_steps=cfg.lr_decay_steps,
+            decay_rate=cfg.lr_decay_rate,
+        )
         model.compile(
-            optimizer=keras.optimizers.Adam(cfg.learning_rate),
+            optimizer=keras.optimizers.Adam(lr_schedule),
             loss='mse',
         )
         return model
 
     def _scale(self, X):
         """Reshape (N, seq_len, 21) → (N*seq_len, 21), scale, reshape back."""
+        if self.pre_scaled:
+            return X
         n, s, f = X.shape
         return self.scaler.transform(X.reshape(-1, f)).reshape(n, s, f)
 
@@ -125,8 +133,9 @@ class LSTMGazeEstimator:
         cfg = self.config
         n, s, f = X_train.shape
 
-        # Fit scaler on training data only
-        self.scaler.fit(X_train.reshape(-1, f))
+        # Fit scaler on training data only (skipped when data is pre-scaled per subject)
+        if not self.pre_scaled:
+            self.scaler.fit(X_train.reshape(-1, f))
         X_train_s = self._scale(X_train)
         X_val_s   = self._scale(X_val)
 
