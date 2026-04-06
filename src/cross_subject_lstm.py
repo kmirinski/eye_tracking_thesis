@@ -117,7 +117,7 @@ def run_fold(val_subject, data_dir, ge_plots, fov, fov_center):
     del X_train, y_train
 
     metrics = estimator.evaluate(X_val, y_val)
-    print(f"Subject {val_subject} val — mean={metrics['mean_error']:.2f}px  rmse={metrics['rmse']:.2f}px")
+    print(f"Subject {val_subject} val — mse={metrics['mse']:.2f}px²  mean={metrics['mean_error']:.2f}px  rmse={metrics['rmse']:.2f}px")
 
     if ge_plots:
         val_pred = estimator.predict(X_val)

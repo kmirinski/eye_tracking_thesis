@@ -130,8 +130,8 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center):
         estimator.fit(pupil_train, screen_train)
         metrics = estimator.evaluate(pupil_val, screen_val)
         results[deg] = metrics
-        print(f"  mean={metrics['mean_error']:.2f}px  rmse={metrics['rmse']:.2f}px  "
-              f"median={metrics['median_error']:.2f}px")
+        print(f"  mse={metrics['mse']:.2f}px²  mean={metrics['mean_error']:.2f}px  "
+              f"rmse={metrics['rmse']:.2f}px  median={metrics['median_error']:.2f}px")
 
         if ge_plots:
             val_pred = estimator.predict(pupil_val)

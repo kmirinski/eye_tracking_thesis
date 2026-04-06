@@ -89,6 +89,7 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
         eval_pupil, eval_screen = pupil_val, screen_val
 
         val_metrics = gaze_estimator.evaluate(eval_pupil, eval_screen)
+        print(f"Validation MSE:        {val_metrics['mse']:.2f} pixels²")
         print(f"Validation RMSE: {val_metrics['rmse']:.2f} pixels")
         print(f"Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
 
@@ -127,6 +128,7 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     eval_X, eval_y = X_val, y_val
 
     val_metrics = lstm_estimator.evaluate(eval_X, eval_y)
+    print(f"Validation MSE:        {val_metrics['mse']:.2f} pixels²")
     print(f"Validation RMSE:       {val_metrics['rmse']:.2f} pixels")
     print(f"Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
 

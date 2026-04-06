@@ -170,6 +170,7 @@ class LSTMGazeEstimator:
         errors = predictions - y
         euclidean = np.sqrt(np.sum(errors ** 2, axis=1))
         return {
+            'mse':          np.mean(np.sum(errors ** 2, axis=1)),
             'rmse':         np.sqrt(np.mean(np.sum(errors ** 2, axis=1))),
             'mean_error':   np.mean(euclidean),
             'std_error':    np.std(euclidean),
