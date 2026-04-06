@@ -11,17 +11,10 @@ Note: --relabel changes the filtered output, so the cache key includes
 whether it is set.
 
 Usage:
-    # Single fold: train on all SUBJECTS except 22, test on 22
-    python src/cross_subject_regressor.py --val_subject 22
-
-    # Full LOO over all SUBJECTS
-    python src/cross_subject_regressor.py
-
-    # With relabeling and gaze plots
-    python src/cross_subject_regressor.py --val_subject 22 --relabel --ge_plots
+    python src/main.py --cross_subject --model regressor
+    python src/main.py --cross_subject --model regressor --val_subject 22 --relabel --ge_plots
 """
 
-import argparse
 import os
 import sys
 
@@ -39,31 +32,15 @@ from pipeline.pipeline import (
     pupil_extraction_stage,
     relabeling_stage,
 )
-from pipeline.runners import fov_filter_mask
+from pipeline.runners import fov_filter_mask, _fov_rect
 from processing.normalization import compute_pupil_stats, normalize_pupils
 
-SUBJECTS   = [4, 5, 6, 7, 11, 12, 15, 18, 19, 22]
-EYE        = 'left'
-FOV        = (40.0, 20.0)
-FOV_CENTER = (501, 879)          # set to (row_px, col_px) to shift the FoV window
-CACHE_DIR  = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
+SUBJECTS  = [4, 5, 6, 7, 11, 12, 15, 18, 19, 22]
+CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
 
-def _fov_rect(gaze_config, fov, fov_center):
-    """Return (row_min, row_max, col_min, col_max) in pixels for the FoV window."""
-    px_per_deg_x = gaze_config.screen_width_px / gaze_config.screen_fov_x_deg
-    px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
-    half_w = (fov[0] / 2) * px_per_deg_x
-    half_h = (fov[1] / 2) * px_per_deg_y
-    if fov_center is None:
-        cr = gaze_config.screen_height_px / 2
-        cc = gaze_config.screen_width_px / 2
-    else:
-        cr, cc = fov_center
-    return (cr - half_h, cr + half_h, cc - half_w, cc + half_w)
 
-
-def load_subject_data(subject, data_dir, relabel, fov, fov_center):
+def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center):
     """
     Run the full preprocessing pipeline for one subject and return filtered
     raw (unnormalized) pupil_centers and screen_coords.
@@ -72,21 +49,21 @@ def load_subject_data(subject, data_dir, relabel, fov, fov_center):
     The cache key includes relabel since it affects filtering.
     """
     relabel_tag = 'rel1' if relabel else 'rel0'
-    cache_path = os.path.join(CACHE_DIR, f'subject_{subject}_{EYE}_regressor_{relabel_tag}.npz')
+    cache_path = os.path.join(CACHE_DIR, f'subject_{subject}_{eye}_regressor_{relabel_tag}.npz')
     if os.path.exists(cache_path):
         print(f"  Subject {subject}: loading from cache")
         data = np.load(cache_path)
         return data['pupil_centers'], data['screen_coords']
 
-    print(f"  Subject {subject}: preprocessing...")
-    eye_index    = 0 if EYE == 'left' else 1
-    frame_config = get_frame_detection_config(subject, EYE)
-    gaze_config  = get_gaze_config(subject)
+    print(f"Subject {subject}: preprocessing...")
+    eye_index = 0 if eye == 'left' else 1
+    frame_config = get_frame_detection_config(subject, eye)
+    gaze_config = get_gaze_config(subject)
 
     eye_dataset = EyeDataset(data_dir, subject, mode='stack')
     eye_dataset.collect_data(eye=eye_index)
 
-    pupil_centers, ellipses, screen_coords = pupil_extraction_stage(eye_dataset, frame_config)
+    pupil_centers, _, screen_coords = pupil_extraction_stage(eye_dataset, frame_config)
     blink_mask = noise_flagging_stage(pupil_centers)
 
     if relabel:
@@ -161,7 +138,7 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center):
             plot_gaze_predictions(
                 val_pred, screen_val,
                 title=f'Subject {val_subject} — Degree {deg}',
-                fov_rect=_fov_rect(gaze_config, fov, fov_center),
+                fov_rect=_fov_rect(fov, fov_center, gaze_config),
             )
 
     best_deg = min(results, key=lambda d: results[d]['mean_error'])
@@ -169,22 +146,25 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center):
     return results
 
 
-def main(data_dir, val_subject, relabel, ge_plots, fov=FOV, fov_center=FOV_CENTER):
+def run(opt):
+    fov = tuple(opt.fov) if opt.fov else (40.0, 20.0)
+    fov_center = tuple(opt.fov_center) if opt.fov_center else (501, 879)
+
     print("=" * 60)
     print("Preprocessing / loading subjects...")
     print("=" * 60)
     subject_data = {}
     for s in SUBJECTS:
-        subject_data[s] = load_subject_data(s, data_dir, relabel, fov, fov_center)
+        subject_data[s] = load_subject_data(s, opt.data_dir, opt.eye, opt.relabel, fov, fov_center)
 
-    if val_subject is not None:
-        if val_subject not in SUBJECTS:
-            raise ValueError(f"--val_subject {val_subject} is not in SUBJECTS list: {SUBJECTS}")
+    if opt.val_subject is not None:
+        if opt.val_subject not in SUBJECTS:
+            raise ValueError(f"--val_subject {opt.val_subject} is not in SUBJECTS list: {SUBJECTS}")
         print()
         print("=" * 60)
-        print(f"Fold: val = subject {val_subject}")
+        print(f"Fold: val = subject {opt.val_subject}")
         print("=" * 60)
-        run_fold(val_subject, subject_data, ge_plots, fov, fov_center)
+        run_fold(opt.val_subject, subject_data, opt.ge_plots, fov, fov_center)
         return
 
     # Full LOO
@@ -194,7 +174,7 @@ def main(data_dir, val_subject, relabel, ge_plots, fov=FOV, fov_center=FOV_CENTE
         print("=" * 60)
         print(f"Fold: val = subject {s}")
         print("=" * 60)
-        fold_results = run_fold(s, subject_data, ge_plots, fov, fov_center)
+        fold_results = run_fold(s, subject_data, opt.ge_plots, fov, fov_center)
         best_deg = min(fold_results, key=lambda d: fold_results[d]['mean_error'])
         all_results[s] = fold_results[best_deg]
 
@@ -209,21 +189,3 @@ def main(data_dir, val_subject, relabel, ge_plots, fov=FOV, fov_center=FOV_CENTE
     mean_errors = [all_results[s]['mean_error'] for s in SUBJECTS]
     print(f"\nOverall mean error: {np.mean(mean_errors):.2f} ± {np.std(mean_errors):.2f} px")
 
-
-def run(opt):
-    fov = tuple(opt.fov) if opt.fov else FOV
-    fov_center = tuple(opt.fov_center) if opt.fov_center else FOV_CENTER
-    main(opt.data_dir, opt.val_subject, opt.relabel, opt.ge_plots, fov, fov_center)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', default=os.path.join(os.getcwd(), 'eye_data'))
-    parser.add_argument('--val_subject', type=int, default=None,
-                        help='Subject to hold out for evaluation. If omitted, runs full LOO.')
-    parser.add_argument('--relabel', action='store_true',
-                        help='Relabel pre-saccade frames to previous label; discard active saccade frames.')
-    parser.add_argument('--ge_plots', action='store_true',
-                        help='Show gaze prediction scatter plots for each degree.')
-    opt = parser.parse_args()
-    main(opt.data_dir, opt.val_subject, opt.relabel, opt.ge_plots)

@@ -172,14 +172,3 @@ def run(opt):
     fov = tuple(opt.fov) if opt.fov else FOV
     fov_center = tuple(opt.fov_center) if opt.fov_center else FOV_CENTER
     main(opt.data_dir, opt.val_subject, opt.ge_plots, fov, fov_center)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', default=os.path.join(os.getcwd(), 'eye_data'))
-    parser.add_argument('--val_subject', type=int, default=None,
-                        help='Subject to hold out for evaluation. If omitted, runs full LOO.')
-    parser.add_argument('--ge_plots', action='store_true',
-                        help='Show gaze prediction scatter and heatmap plots after each fold.')
-    opt = parser.parse_args()
-    main(opt.data_dir, opt.val_subject, opt.ge_plots)

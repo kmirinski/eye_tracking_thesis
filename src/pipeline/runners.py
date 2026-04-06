@@ -21,20 +21,20 @@ def fov_filter_mask(screen_coords, fov_width_deg, fov_height_deg, gaze_config, c
     return (np.abs(rows - center_row) <= half_h_px) & (np.abs(cols - center_col) <= half_w_px)
 
 
-def _fov_rect(opt, gaze_config):
+def _fov_rect(fov, fov_center, gaze_config):
     """Return (row_min, row_max, col_min, col_max) in pixels for the FoV window, or None."""
-    if opt.fov is None:
+    if fov is None:
         return None
-    fov_w_deg, fov_h_deg = opt.fov
+    fov_w_deg, fov_h_deg = fov
     px_per_deg_x = gaze_config.screen_width_px / gaze_config.screen_fov_x_deg
     px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
     half_w = (fov_w_deg / 2) * px_per_deg_x
     half_h = (fov_h_deg / 2) * px_per_deg_y
-    if opt.fov_center is None:
+    if fov_center is None:
         cr = gaze_config.screen_height_px / 2
         cc = gaze_config.screen_width_px / 2
     else:
-        cr, cc = opt.fov_center
+        cr, cc = fov_center
     return (cr - half_h, cr + half_h, cc - half_w, cc + half_w)
 
 
@@ -95,7 +95,7 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
         if opt.ge_plots:
             val_pred = gaze_estimator.predict(eval_pupil)
             plot_gaze_predictions(val_pred, eval_screen, title=f'Degree {deg} — validation set',
-                                  fov_rect=_fov_rect(opt, gaze_config))
+                                  fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))
 
 
 def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
@@ -115,9 +115,9 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     n_train = int(n * gaze_config.train_ratio)
     n_val   = int(n * gaze_config.val_ratio)
 
-    X_train, y_train = X[:n_train],               y[:n_train]
-    X_val,   y_val   = X[n_train:n_train + n_val], y[n_train:n_train + n_val]
-    X_test,  y_test  = X[n_train + n_val:],        y[n_train + n_val:]
+    X_train, y_train = X[:n_train], y[:n_train]
+    X_val, y_val = X[n_train:n_train + n_val], y[n_train:n_train + n_val]
+    X_test, y_test = X[n_train + n_val:], y[n_train + n_val:]
 
     print(f"Training set: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
 
@@ -133,4 +133,4 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     if opt.ge_plots:
         val_pred = lstm_estimator.predict(eval_X)
         plot_gaze_predictions(val_pred, eval_y, title='LSTM — validation set',
-                              fov_rect=_fov_rect(opt, gaze_config))
+                              fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))

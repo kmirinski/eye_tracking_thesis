@@ -89,7 +89,7 @@ class LSTMConfig:
     dense_units: tuple = (64, 32, 16)
     l1_reg: float = 1e-4
     epochs: int = 50
-    batch_size: int = 10
+    batch_size: int = 128           # 10
     learning_rate: float = 2e-4
     lr_decay_rate: float = 0.98
     lr_decay_steps: int = 1000
