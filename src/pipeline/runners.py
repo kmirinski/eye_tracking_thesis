@@ -2,7 +2,7 @@ import numpy as np
 
 from data.visualization import plot_gaze_predictions
 from models.polynomial import GazeEstimator
-from models.lstm import LSTMGazeEstimator, build_lstm_sequences
+from models.lstm import LSTMGazeEstimator, build_lstm_sequences, build_lstm_sequences_combined
 from config import GazeConfig, LSTMConfig
 
 
@@ -135,4 +135,39 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     if opt.ge_plots:
         val_pred = lstm_estimator.predict(eval_X)
         plot_gaze_predictions(val_pred, eval_y, title='LSTM — validation set',
+                              fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))
+
+
+def run_lstm_combined(combined_samples, gaze_config, opt):
+    lstm_config = LSTMConfig()
+
+    X, y = build_lstm_sequences_combined(combined_samples, seq_len=lstm_config.seq_len)
+    print(f"Total windows (frame+event): {len(X)}  (shape {X.shape})")
+
+    if opt.fov is not None:
+        fov_w, fov_h = opt.fov
+        fov_mask = fov_filter_mask(y, fov_w, fov_h, gaze_config, center=opt.fov_center)
+        X, y = X[fov_mask], y[fov_mask]
+
+    n = len(X)
+    n_train = int(n * gaze_config.train_ratio)
+    n_val   = int(n * gaze_config.val_ratio)
+
+    X_train, y_train = X[:n_train], y[:n_train]
+    X_val, y_val = X[n_train:n_train + n_val], y[n_train:n_train + n_val]
+    X_test, y_test = X[n_train + n_val:], y[n_train + n_val:]
+
+    print(f"Training set: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
+
+    lstm_estimator = LSTMGazeEstimator(lstm_config)
+    lstm_estimator.fit(X_train, y_train, X_val, y_val)
+
+    val_metrics = lstm_estimator.evaluate(X_val, y_val)
+    print(f"Validation MSE:        {val_metrics['mse']:.2f} pixels²")
+    print(f"Validation RMSE:       {val_metrics['rmse']:.2f} pixels")
+    print(f"Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
+
+    if opt.ge_plots:
+        val_pred = lstm_estimator.predict(X_val)
+        plot_gaze_predictions(val_pred, y_val, title='LSTM (frame+event) — validation set',
                               fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))

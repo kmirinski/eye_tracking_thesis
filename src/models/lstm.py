@@ -72,6 +72,23 @@ def build_lstm_sequences(ellipses, screen_coords, valid_mask, seq_len=10):
     return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32)
 
 
+def build_lstm_sequences_combined(samples, seq_len=10):
+    """
+    Build sliding-window sequences from a chronologically sorted list of samples.
+    Each sample is a dict with keys 'ellipse' and 'screen_coord'.
+    Returns X (M, seq_len, 21) and y (M, 2).
+    """
+    features = [ellipse_to_21d(s['ellipse']) for s in samples]
+    labels   = [s['screen_coord'] for s in samples]
+
+    X, y = [], []
+    for i in range(seq_len - 1, len(samples)):
+        X.append(np.stack(features[i - seq_len + 1 : i + 1]))
+        y.append(labels[i])
+
+    return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32)
+
+
 class LSTMGazeEstimator:
 
     def __init__(self, config: LSTMConfig = None, pre_scaled: bool = False):
