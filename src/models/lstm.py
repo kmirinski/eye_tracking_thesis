@@ -142,11 +142,18 @@ class LSTMGazeEstimator:
         self.model = self._build_model()
         self.model.summary()
 
+        early_stop = keras.callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=cfg.early_stop_patience,
+            restore_best_weights=True,
+            verbose=1,
+        )
         self.model.fit(
             X_train_s, y_train,
             validation_data=(X_val_s, y_val),
             epochs=cfg.epochs,
             batch_size=cfg.batch_size,
+            callbacks=[early_stop],
             verbose=1,
         )
 
@@ -156,6 +163,42 @@ class LSTMGazeEstimator:
         train_rmse = np.sqrt(np.mean(np.sum((train_pred - y_train) ** 2, axis=1)))
         print(f"LSTM Training RMSE: {train_rmse:.2f} pixels")
 
+        return self
+
+    def fine_tune(self, X_ft, y_ft):
+        """
+        Fine-tune the pre-trained model on subject-specific calibration data.
+        Re-compiles with a lower learning rate; optionally freezes the LSTM layer.
+
+        Args:
+            X_ft: (N_ft, seq_len, 21) — calibration sequences (already scaled)
+            y_ft: (N_ft, 2)           — corresponding screen coordinates
+        """
+        if not self.is_fitted:
+            raise RuntimeError("Call fit() before fine_tune().")
+        cfg = self.config
+
+        if cfg.freeze_lstm:
+            self.model.layers[1].trainable = False  # index 1 = LSTM layer
+
+        self.model.compile(
+            optimizer=keras.optimizers.Adam(cfg.fine_tune_lr),
+            loss='mse',
+        )
+        X_ft_s = self._scale(X_ft)
+        self.model.fit(
+            X_ft_s, y_ft,
+            epochs=cfg.fine_tune_epochs,
+            batch_size=cfg.fine_tune_batch_size,
+            verbose=1,
+        )
+
+        if cfg.freeze_lstm:
+            self.model.layers[1].trainable = True   # restore for any subsequent use
+
+        ft_pred = self.predict(X_ft)
+        ft_rmse = np.sqrt(np.mean(np.sum((ft_pred - y_ft) ** 2, axis=1)))
+        print(f"LSTM Fine-tune RMSE (on fine-tune data): {ft_rmse:.2f} pixels")
         return self
 
     def predict(self, X):

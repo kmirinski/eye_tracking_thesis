@@ -88,8 +88,14 @@ class LSTMConfig:
     lstm_units: int = 128
     dense_units: tuple = (64, 32, 16)
     l1_reg: float = 1e-4
-    epochs: int = 50
-    batch_size: int = 128           # 10
+    epochs: int = 1500
+    batch_size: int = 10
     learning_rate: float = 2e-4
     lr_decay_rate: float = 0.98
     lr_decay_steps: int = 1000
+    early_stop_patience: int = 500           # epochs without val_loss improvement before stopping
+    fine_tune_lr: float = 2e-5              # 10× lower than initial LR
+    fine_tune_epochs: int = 150
+    fine_tune_batch_size: int = 32
+    fine_tune_ratio: float = 0.4            # fraction of val subject data used for fine-tuning
+    freeze_lstm: bool = True                # if True, freeze LSTM layer during fine-tuning

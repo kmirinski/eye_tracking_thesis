@@ -96,7 +96,7 @@ def load_subject_data(subject, data_dir, fov, fov_center):
     return X, y
 
 
-def run_fold(val_subject, data_dir, ge_plots, fov, fov_center):
+def run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=False):
     X_val, y_val = load_subject_data(val_subject, data_dir, fov, fov_center)
 
     X_parts, y_parts = [], []
@@ -112,17 +112,37 @@ def run_fold(val_subject, data_dir, ge_plots, fov, fov_center):
 
     print(f"Train: {len(X_train)} sequences  |  Val: {len(X_val)} sequences")
 
-    estimator = LSTMGazeEstimator(LSTMConfig(), pre_scaled=True)
+    lstm_config = LSTMConfig()
+    estimator = LSTMGazeEstimator(lstm_config, pre_scaled=True)
     estimator.fit(X_train, y_train, X_val, y_val)
     del X_train, y_train
 
-    metrics = estimator.evaluate(X_val, y_val)
+    if fine_tune:
+        # Stratified sampling: take fine_tune_ratio fraction of each unique label's sequences
+        unique_labels = np.unique(y_val, axis=0)
+        ft_indices = []
+        for label in unique_labels:
+            label_idx = np.where(np.all(y_val == label, axis=1))[0]
+            n_sample = max(1, int(len(label_idx) * lstm_config.fine_tune_ratio))
+            ft_indices.extend(np.random.choice(label_idx, n_sample, replace=False))
+        ft_indices = np.array(ft_indices)
+        eval_indices = np.setdiff1d(np.arange(len(X_val)), ft_indices)
+
+        X_ft,   y_ft   = X_val[ft_indices],  y_val[ft_indices]
+        X_eval, y_eval = X_val[eval_indices], y_val[eval_indices]
+        print(f"Fine-tuning on {len(ft_indices)} sequences from subject {val_subject} "
+              f"({len(unique_labels)} labels × ~{lstm_config.fine_tune_ratio*100:.0f}% each)...")
+        estimator.fine_tune(X_ft, y_ft)
+    else:
+        X_eval, y_eval = X_val, y_val
+
+    metrics = estimator.evaluate(X_eval, y_eval)
     print(f"Subject {val_subject} val — mse={metrics['mse']:.2f}px²  mean={metrics['mean_error']:.2f}px  rmse={metrics['rmse']:.2f}px")
 
     if ge_plots:
-        val_pred = estimator.predict(X_val)
+        eval_pred = estimator.predict(X_eval)
         plot_gaze_predictions(
-            val_pred, y_val,
+            eval_pred, y_eval,
             title=f'LSTM — Subject {val_subject}',
             fov_rect=_fov_rect(fov, fov_center),
         )
@@ -130,7 +150,7 @@ def run_fold(val_subject, data_dir, ge_plots, fov, fov_center):
     return metrics
 
 
-def main(data_dir, val_subject, ge_plots, fov=FOV, fov_center=FOV_CENTER):
+def main(data_dir, val_subject, ge_plots, fov=FOV, fov_center=FOV_CENTER, fine_tune=False):
     # Warm up cache for all subjects before running folds
     print("=" * 60)
     print("Preprocessing / loading subjects...")
@@ -143,18 +163,18 @@ def main(data_dir, val_subject, ge_plots, fov=FOV, fov_center=FOV_CENTER):
             raise ValueError(f"--val_subject {val_subject} is not in SUBJECTS list: {SUBJECTS}")
         print()
         print("=" * 60)
-        print(f"Fold: val = subject {val_subject}")
+        print(f"Fold: val = subject {val_subject}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
-        run_fold(val_subject, data_dir, ge_plots, fov, fov_center)
+        run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=fine_tune)
         return
 
     results = {}
     for s in SUBJECTS:
         print()
         print("=" * 60)
-        print(f"Fold: val = subject {s}")
+        print(f"Fold: val = subject {s}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
-        results[s] = run_fold(s, data_dir, ge_plots, fov, fov_center)
+        results[s] = run_fold(s, data_dir, ge_plots, fov, fov_center, fine_tune=fine_tune)
 
     print()
     print("=" * 60)
@@ -171,4 +191,5 @@ def main(data_dir, val_subject, ge_plots, fov=FOV, fov_center=FOV_CENTER):
 def run(opt):
     fov = tuple(opt.fov) if opt.fov else FOV
     fov_center = tuple(opt.fov_center) if opt.fov_center else FOV_CENTER
-    main(opt.data_dir, opt.val_subject, opt.ge_plots, fov, fov_center)
+    main(opt.data_dir, opt.val_subject, opt.ge_plots, fov, fov_center,
+         fine_tune=getattr(opt, 'fine_tune', False))

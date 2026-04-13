@@ -48,6 +48,8 @@ parser.add_argument('--cross_subject', action='store_true',
                     help='run leave-one-out cross-subject evaluation instead of single-subject pipeline')
 parser.add_argument('--val_subject', type=int, default=None,
                     help='subject to hold out for evaluation (cross-subject mode only); if omitted, runs full LOO')
+parser.add_argument('--fine_tune', action='store_true',
+                    help='fine-tune the cross-subject LSTM on a small portion of the val subject\'s data')
 
 
 if __name__ == '__main__':
