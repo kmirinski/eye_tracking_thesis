@@ -42,9 +42,10 @@ def get_frame_detection_config(subject: int, eye: str) -> FrameDetectionConfig:
 
 @dataclass
 class TrackingConfig:
-    num_events: int = 2000
+    num_events: int = 2000       # legacy global tracker
     fit_threshold: float = 0.8
     roi_expansion: float = 1.5
+    num_events_roi: int = 200    # events to accumulate within ROI per batch
 
 @dataclass
 class KDEConfig:

@@ -82,6 +82,13 @@ class EyeDataset:
             if type(itm) is Frame:
                 return itm
     
+    def load_events_sorted(self, eye=0):
+        """Return events as numpy array (N, 4) = [polarity, row, col, timestamp], sorted by timestamp."""
+        subject_name = "user" + str(self.subject)
+        event_file = os.path.join(self.data_dir, subject_name, str(eye), 'events.aerdat')
+        events = read_aerdat(event_file, mode='np')  # shape (N, 4)
+        return events[events[:, 3].argsort()]
+
     def collect_data(self, eye=0):
         print('Loading Frames...')
         self.frame_list = self.load_frame_data(eye)
