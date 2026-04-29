@@ -165,7 +165,7 @@ class LSTMGazeEstimator:
             restore_best_weights=True,
             verbose=1,
         )
-        self.model.fit(
+        history = self.model.fit(
             X_train_s, y_train,
             validation_data=(X_val_s, y_val),
             epochs=cfg.epochs,
@@ -173,6 +173,7 @@ class LSTMGazeEstimator:
             callbacks=[early_stop],
             verbose=1,
         )
+        self.history = history.history
 
         self.is_fitted = True
 

@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from config import GazeConfig, LSTMConfig, get_frame_detection_config, get_gaze_config
 from data.loaders import EyeDataset
-from data.visualization import plot_gaze_predictions
+from data.visualization import plot_gaze_predictions, plot_training_history
 from models.lstm import LSTMGazeEstimator, build_lstm_sequences
 from pipeline.pipeline import (
     build_valid_mask, noise_flagging_stage,
@@ -96,7 +96,7 @@ def load_subject_data(subject, data_dir, fov, fov_center):
     return X, y
 
 
-def run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=False):
+def run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=False, loss_plot=False):
     X_val, y_val = load_subject_data(val_subject, data_dir, fov, fov_center)
 
     X_parts, y_parts = [], []
@@ -116,6 +116,9 @@ def run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=False):
     estimator = LSTMGazeEstimator(lstm_config, pre_scaled=True)
     estimator.fit(X_train, y_train, X_val, y_val)
     del X_train, y_train
+
+    if loss_plot:
+        plot_training_history(estimator.history, title=f'LSTM training — val subject {val_subject}')
 
     if fine_tune:
         # Stratified sampling: take fine_tune_ratio fraction of each unique label's sequences
@@ -150,7 +153,7 @@ def run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=False):
     return metrics
 
 
-def main(data_dir, val_subject, ge_plots, fov=FOV, fov_center=FOV_CENTER, fine_tune=False):
+def main(data_dir, val_subject, ge_plots, fov=FOV, fov_center=FOV_CENTER, fine_tune=False, loss_plot=False):
     # Warm up cache for all subjects before running folds
     print("=" * 60)
     print("Preprocessing / loading subjects...")
@@ -165,7 +168,7 @@ def main(data_dir, val_subject, ge_plots, fov=FOV, fov_center=FOV_CENTER, fine_t
         print("=" * 60)
         print(f"Fold: val = subject {val_subject}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
-        run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=fine_tune)
+        run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=fine_tune, loss_plot=loss_plot)
         return
 
     results = {}
@@ -174,7 +177,7 @@ def main(data_dir, val_subject, ge_plots, fov=FOV, fov_center=FOV_CENTER, fine_t
         print("=" * 60)
         print(f"Fold: val = subject {s}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
-        results[s] = run_fold(s, data_dir, ge_plots, fov, fov_center, fine_tune=fine_tune)
+        results[s] = run_fold(s, data_dir, ge_plots, fov, fov_center, fine_tune=fine_tune, loss_plot=loss_plot)
 
     print()
     print("=" * 60)
@@ -192,4 +195,5 @@ def run(opt):
     fov = tuple(opt.fov) if opt.fov else FOV
     fov_center = tuple(opt.fov_center) if opt.fov_center else FOV_CENTER
     main(opt.data_dir, opt.val_subject, opt.ge_plots, fov, fov_center,
-         fine_tune=getattr(opt, 'fine_tune', False))
+         fine_tune=getattr(opt, 'fine_tune', False),
+         loss_plot=getattr(opt, 'loss_plot', False))

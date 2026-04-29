@@ -1,5 +1,5 @@
+import cv2
 import numpy as np
-from ellipse import LsqEllipse
 
 from data.loaders import EyeDataset, Frame, Event
 from processing.frame_detection import extract_pupil
@@ -10,12 +10,9 @@ def fit_ellipse(events):
     if len(events) < 5:
         return None
 
-    points = np.array([[e.col, e.row] for e in events])
+    points = np.array([[e.col, e.row] for e in events], dtype=np.float32).reshape(-1, 1, 2)
     try:
-        lsq_ellipse = LsqEllipse()
-        lsq_ellipse.fit(points)
-        center, width, height, phi = lsq_ellipse.as_parameters()
-        return (tuple(center), (width, height), phi)
+        return cv2.fitEllipse(points)
     except Exception:
         return None
 
@@ -55,12 +52,13 @@ def get_roi_events(events, prev_ellipse, expansion_factor=1.5):
 
     roi_events = []
 
+    phi_rad = np.deg2rad(phi_p)
+    cos_phi = np.cos(-phi_rad)
+    sin_phi = np.sin(-phi_rad)
+
     for event in events:
         dx = event.col - xp
         dy = event.row - yp
-
-        cos_phi = np.cos(-phi_p)
-        sin_phi = np.sin(-phi_p)
 
         rotated_x = dx * cos_phi - dy * sin_phi
         rotated_y = dx * sin_phi + dy * cos_phi

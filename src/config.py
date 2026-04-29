@@ -43,9 +43,9 @@ def get_frame_detection_config(subject: int, eye: str) -> FrameDetectionConfig:
 @dataclass
 class TrackingConfig:
     num_events: int = 2000       # legacy global tracker
-    fit_threshold: float = 0.8
-    roi_expansion: float = 1.5
-    num_events_roi: int = 200    # events to accumulate within ROI per batch
+    fit_threshold: float = 0.8   # used by legacy global tracker only
+    roi_expansion: float = 1.1
+    num_events_roi: int = 80    # events to accumulate within ROI per batch
 
 @dataclass
 class KDEConfig:
@@ -94,7 +94,7 @@ class LSTMConfig:
     learning_rate: float = 2e-4
     lr_decay_rate: float = 0.98
     lr_decay_steps: int = 1000
-    early_stop_patience: int = 500           # epochs without val_loss improvement before stopping
+    early_stop_patience: int = 5000           # epochs without val_loss improvement before stopping
     fine_tune_lr: float = 2e-5              # 10× lower than initial LR
     fine_tune_epochs: int = 150
     fine_tune_batch_size: int = 32

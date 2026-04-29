@@ -27,6 +27,10 @@ parser.add_argument('--relabel_diag', action='store_true',
                     help='plot relabeling phase diagnostic (requires --relabel)')
 parser.add_argument('--diff_plot', action='store_true',
                     help='plot frame-to-frame pupil displacement over time with label-change markers')
+parser.add_argument('--event_diag', action='store_true',
+                    help='plot event extraction diagnostic: ellipse centres over time + size distributions (requires --model lstm)')
+parser.add_argument('--loss_plot', action='store_true',
+                    help='plot training vs validation loss curve after LSTM training')
 
 
 # Relabeling options
