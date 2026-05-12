@@ -1,4 +1,12 @@
+import os
 from dataclasses import dataclass
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DATASET_PATHS = {
+    "ebveye": os.path.join(BASE_DIR, "eye_data/ebveye"),
+    "ev_eye": os.path.join(BASE_DIR, "eye_data/ev_eye/raw_data"),
+}
 
 @dataclass
 class FrameDetectionConfig:

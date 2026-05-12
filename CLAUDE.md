@@ -7,14 +7,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cd /home/kmirinski/uni/msc/thesis/eye_tracking_thesis
 source .venv/bin/activate
-python src/main.py --subject 22 --eye left --data_dir eye_data
+python src/main.py --subject 22 --eye left --dataset ebveye --motion saccadic
 ```
 
-All arguments have defaults (`--subject 22`, `--data_dir <cwd>/eye_data`). Scripts must be run from the repo root so that relative imports inside `src/` resolve correctly.
+All arguments have defaults (`--subject 22`, `--dataset ebveye`, `--motion saccadic`). Scripts must be run from the repo root so that relative imports inside `src/` resolve correctly.
 
 **Key flags:**
+- `--dataset ebveye|ev_eye` — which dataset to load; resolves to the correct path and loader automatically
+- `--motion saccadic|pursuit` — load saccadic or smooth pursuit data (applies to both datasets)
 - `--model regressor|lstm` — polynomial regression (default) or LSTM gaze estimator
-- `--relabel` — relabel pre-saccade frames to the previous target label; discards active saccade frames via `relabeling_stage`
+- `--relabel` — relabel pre-saccade frames to the previous target label; discards active saccade frames via `relabeling_stage` (saccadic data only)
 - `--fov WIDTH_DEG HEIGHT_DEG` — restrict training to a centered FoV window (e.g. `--fov 40 20`)
 - `--cross_subject` — leave-one-out cross-subject evaluation; add `--val_subject N` to run a single fold, `--fine_tune` to fine-tune on the held-out subject
 
@@ -49,15 +51,35 @@ The system is an event-based eye tracking pipeline for DVS (Dynamic Vision Senso
 
 ```
 eye_data/
-  user{1..27}/
-    0/          # left eye
-      frames/   # APS frame images, filename encodes metadata
-      events.aerdat
-    1/          # right eye
-data_cache/     # cached cross-subject .npz sequences (auto-created)
+  ebveye/                    # formerly "angelopoulos"; loaded by EyeDataset
+    user{1..27}/
+      0/                     # left eye
+        frames/              # APS frames: {idx}_{row}_{col}_{stimulus_type}_{ts}.png
+        events.aerdat        # binary AERDAT event stream
+      1/                     # right eye
+  ev_eye/
+    raw_data/                # loaded by EvEyeDataset
+      data_davis/
+        user{ID}/
+          left|right/
+            session_1_0_1/   # saccadic trial 1
+            session_1_0_2/   # saccadic trial 2
+            session_2_0_1/   # smooth pursuit trial 1
+            session_2_0_2/   # smooth pursuit trial 2
+              frames/        # {idx}_{ts}.png
+              events/
+                events.txt   # text: "timestamp row col polarity" per line
+                event_startime.txt  # absolute Davis start time in µs
+      data_tobii/
+        user{ID}/
+          session_*/
+            gazedata         # NDJSON; records with gaze2d: [x_norm, y_norm]
+data_cache/                  # cached cross-subject .npz sequences (auto-created)
 ```
 
-Frame filenames encode `(index, row, col, stimulus_type, timestamp)` parsed by `get_path_info()` in `loaders.py`.
+**ebveye** frame filenames encode `(index, row, col, stimulus_type, timestamp)` parsed by `get_path_info()`. Stimulus types: `s`=saccadic, `p`=pursuit, `st`/`pa`=transitions (excluded).
+
+**ev_eye** gaze labels come from Tobii NDJSON (`gazedata`). Alignment: `davis_us = startime_us + tobii_s * 1e6` using `event_startime.txt`.
 
 ## Dependencies
 

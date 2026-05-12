@@ -2,7 +2,7 @@ import numpy as np
 
 from data.visualization import write_ellipse_video, browse_ellipse_frames, browse_pupil_extraction, plot_pupil_centers_over_time_all, plot_pupil_centers_over_time, plot_pupil_diffs
 from utils import timer
-from data.loaders import EyeDataset, Event
+from data.loaders import EyeDataset, EvEyeDataset, Event
 from processing.frame_detection import extract_pupil_centers
 from config import FrameDetectionConfig, get_frame_detection_config, GazeConfig, get_gaze_config, TrackingConfig
 from pipeline.runners import run_regressor, run_lstm, run_lstm_combined
@@ -353,16 +353,28 @@ def compute_phase_labels(screen_coords_original_chron, screen_coords_relabeled_c
 
 
 def run_pipeline(opt):
-    eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
-    eye_index = 0 if opt.eye == 'left' else 1
+    dataset  = getattr(opt, 'dataset', 'ebveye')
+    motion   = getattr(opt, 'motion',  'saccadic')
     frame_config = get_frame_detection_config(opt.subject, opt.eye)
-    gaze_config = get_gaze_config(opt.subject)
+    gaze_config  = get_gaze_config(opt.subject)
 
     print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
     print('Loading data from ' + opt.data_dir)
 
-    with timer("Collection"):
-        eye_dataset.collect_data(eye=eye_index)
+    if dataset == 'ev_eye':
+        eye_dataset = EvEyeDataset(
+            opt.data_dir, opt.subject, motion=motion, mode='np',
+            screen_width_px=gaze_config.screen_width_px,
+            screen_height_px=gaze_config.screen_height_px,
+        )
+        eye_key = opt.eye  # 'left' or 'right'
+        with timer("Collection"):
+            eye_dataset.collect_data(eye=eye_key)
+    else:
+        eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
+        eye_key = 0 if opt.eye == 'left' else 1
+        with timer("Collection"):
+            eye_dataset.collect_data(eye=eye_key, motion=motion)
 
     with timer("Pupil extraction"):
         pupil_centers, ellipses, screen_coords = pupil_extraction_stage(eye_dataset, frame_config)
@@ -372,7 +384,7 @@ def run_pipeline(opt):
 
     saccade_mask = None
     screen_coords_original = screen_coords.copy()
-    if opt.relabel:
+    if opt.relabel and motion == 'saccadic':
         with timer("Relabeling"):
             screen_coords, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
 
@@ -380,7 +392,7 @@ def run_pipeline(opt):
         blink_mask, screen_coords,
         skip_frames=gaze_config.saccade_skip_frames,
         saccade_mask=saccade_mask,
-        skip_label_changes=not opt.relabel,
+        skip_label_changes=(motion == 'saccadic') and not opt.relabel,
         post_blink_skip_frames=gaze_config.post_blink_skip_frames,
     )
 
@@ -416,7 +428,7 @@ def run_pipeline(opt):
             run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt)
         elif opt.model == 'lstm':
             tracking_config = TrackingConfig()
-            events_np = eye_dataset.load_events_sorted(eye_index)
+            events_np = eye_dataset.load_events_sorted(eye_key)
             with timer("Event extraction"):
                 event_samples = event_extraction_stage(
                     events_np, eye_dataset.frame_list,
