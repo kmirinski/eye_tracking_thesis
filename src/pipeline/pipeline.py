@@ -353,10 +353,10 @@ def compute_phase_labels(screen_coords_original_chron, screen_coords_relabeled_c
 
 
 def run_pipeline(opt):
-    dataset  = getattr(opt, 'dataset', 'ebveye')
-    motion   = getattr(opt, 'motion',  'saccadic')
+    dataset = getattr(opt, 'dataset', 'ebveye')
+    motion = getattr(opt, 'motion',  'saccadic')
     frame_config = get_frame_detection_config(opt.subject, opt.eye)
-    gaze_config  = get_gaze_config(opt.subject)
+    gaze_config = get_gaze_config(opt.subject)
 
     print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
     print('Loading data from ' + opt.data_dir)
@@ -388,11 +388,15 @@ def run_pipeline(opt):
         with timer("Relabeling"):
             screen_coords, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
 
+    # skip_label_changes only makes sense for ebveye, where target jumps between
+    # discrete fixation points. For ev_eye, Tobii labels are continuous floats —
+    # every frame looks like a "change", which would invalidate everything.
+    skip_label_changes = (dataset == 'ebveye') and (motion == 'saccadic') and not opt.relabel
     valid_mask = build_valid_mask(
         blink_mask, screen_coords,
         skip_frames=gaze_config.saccade_skip_frames,
         saccade_mask=saccade_mask,
-        skip_label_changes=(motion == 'saccadic') and not opt.relabel,
+        skip_label_changes=skip_label_changes,
         post_blink_skip_frames=gaze_config.post_blink_skip_frames,
     )
 
@@ -425,7 +429,15 @@ def run_pipeline(opt):
 
     with timer("Model training"):
         if opt.model == 'regressor':
-            run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt)
+            tracking_config = TrackingConfig()
+            events_np = eye_dataset.load_events_sorted(eye_key)
+            with timer("Event extraction"):
+                event_samples = event_extraction_stage(
+                    events_np, eye_dataset.frame_list,
+                    ellipses, screen_coords, valid_mask, tracking_config,
+                )
+            run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt,
+                          event_samples=event_samples)
         elif opt.model == 'lstm':
             tracking_config = TrackingConfig()
             events_np = eye_dataset.load_events_sorted(eye_key)
