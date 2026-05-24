@@ -2,11 +2,11 @@ import numpy as np
 
 from data.visualization import write_ellipse_video, browse_ellipse_frames, browse_pupil_extraction, plot_pupil_centers_over_time_all, plot_pupil_centers_over_time, plot_pupil_diffs
 from utils import timer
-from data.loaders import EyeDataset, EvEyeDataset, Event
+from data.loaders import EyeDataset, EvEyeDataset
 from processing.frame_detection import extract_pupil_centers
-from config import FrameDetectionConfig, get_frame_detection_config, GazeConfig, get_gaze_config, TrackingConfig
+from config import FrameDetectionConfig, get_frame_detection_config, GazeConfig, get_gaze_config, TemplateTrackingConfig
 from pipeline.runners import run_regressor, run_lstm, run_lstm_combined
-from tracking import fit_ellipse
+from tracking import sample_ellipse_boundary, points_to_edge_matching
 
 
 def _find_sections(screen_chron):
@@ -179,100 +179,82 @@ def build_valid_mask(blink_mask, screen_coords, skip_frames,
     return valid[::-1]
 
 
-def _in_roi(col, row, ellipse, expansion_factor):
-    """Return True if pixel (col, row) lies within the expanded elliptical ROI."""
-    (xp, yp), (wp, hp), phi_deg = ellipse
-    expanded_w = wp * expansion_factor
-    expanded_h = hp * expansion_factor
-    dx = col - xp
-    dy = row - yp
-    phi_rad = np.deg2rad(phi_deg)
-    cos_phi = np.cos(phi_rad)
-    sin_phi = np.sin(phi_rad)
-    rotated_x =  dx * cos_phi + dy * sin_phi
-    rotated_y = -dx * sin_phi + dy * cos_phi
-    return (rotated_x / (expanded_w / 2)) ** 2 + (rotated_y / (expanded_h / 2)) ** 2 <= 1.0
 
-
-def event_extraction_stage(events_np, frame_list, ellipses,
-                           screen_coords, valid_mask, tracking_config: TrackingConfig):
-    """
-    Extract event-based pupil ellipses using an ROI around the last known pupil.
-
-    For each batch of num_events_roi events within the ROI:
-      - Fit an ellipse to the batch.
-      - If the fit succeeds, record the ellipse labelled with the screen_coord
-        of the frame immediately following the batch's last event.
-      - The ROI is updated from frame ellipses as we advance through time, and
-        from accepted event ellipses.
-
-    Labelling uses the raw (possibly filtered) frame screen_coord — closest to
-    the paper's strategy of labelling events with the immediately-following frame.
-
-    Returns a list of dicts: [{'ellipse': ..., 'screen_coord': ..., 'timestamp': ...}, ...]
-    """
-    # Chronological frame arrays
+def template_tracking_stage(events_np, frame_list, ellipses,
+                            screen_coords, valid_mask, config: TemplateTrackingConfig):
     frame_list_chron = frame_list[::-1]
     ellipses_chron = ellipses[::-1]
     screen_chron = screen_coords[::-1]
     valid_chron = valid_mask[::-1]
     frame_ts = np.array([f.timestamp for f in frame_list_chron], dtype=np.int64)
 
-    # Find the first valid frame that has a detected ellipse — this seeds the ROI
     first_valid_idx = None
     for i in range(len(valid_chron)):
         if valid_chron[i] and ellipses_chron[i] is not None:
             first_valid_idx = i
             break
     if first_valid_idx is None:
-        print("Event extraction: no valid frame with ellipse found, skipping.")
+        print("Template tracking: no valid frame with ellipse found, skipping.")
         return []
 
     first_valid_ts = frame_ts[first_valid_idx]
-    prev_ellipse   = ellipses_chron[first_valid_idx]
+    template_ellipse = ellipses_chron[first_valid_idx]
+    boundary_Q = sample_ellipse_boundary(template_ellipse, config.num_boundary)
+    center = np.array(template_ellipse[0], dtype=np.float64)
+    axes = template_ellipse[1]
+    angle = template_ellipse[2]
+    gamma_bar = np.mean(np.linalg.norm(boundary_Q - center, axis=1))
 
-    # Skip events before the first valid frame
     start_ev = int(np.searchsorted(events_np[:, 3], first_valid_ts, side='right'))
 
     event_samples = []
-    roi_buffer = []
+    candidate_buf = []
     current_frame_ptr = first_valid_idx
 
     for i in range(start_ev, len(events_np)):
         polarity, row, col, ts = events_np[i]
 
-        # Advance frame pointer: update prev_ellipse whenever we pass a frame with a valid ellipse
         while (current_frame_ptr + 1 < len(frame_list_chron) and
                frame_ts[current_frame_ptr + 1] <= ts):
             current_frame_ptr += 1
-            candidate = ellipses_chron[current_frame_ptr]
-            if candidate is not None:
-                prev_ellipse = candidate
+            candidate_ell = ellipses_chron[current_frame_ptr]
+            if candidate_ell is not None:
+                template_ellipse = candidate_ell
+                boundary_Q = sample_ellipse_boundary(template_ellipse, config.num_boundary)
+                center = np.array(template_ellipse[0], dtype=np.float64)
+                axes = template_ellipse[1]
+                angle = template_ellipse[2]
+                gamma_bar = np.mean(np.linalg.norm(boundary_Q - center, axis=1))
+                candidate_buf = []
 
-        if not _in_roi(col, row, prev_ellipse, tracking_config.roi_expansion):
+        dist = np.sqrt((col - center[0]) ** 2 + (row - center[1]) ** 2)
+        if config.lambda1 * gamma_bar < dist < config.lambda2 * gamma_bar:
+            candidate_buf.append((col, row, ts))
+
+        if len(candidate_buf) < config.num_events:
             continue
 
-        roi_buffer.append(Event(polarity, row, col, ts))
+        pts = np.array([(c[0], c[1]) for c in candidate_buf], dtype=np.float64)
+        T = points_to_edge_matching(pts, boundary_Q,
+                                    max_iter=config.max_icp_iter,
+                                    convergence=config.convergence)
 
-        if len(roi_buffer) < tracking_config.num_events_roi:
-            continue
+        center = center - T
+        boundary_Q = boundary_Q - T
 
-        # Batch is full — fit
-        ellipse_raw = fit_ellipse(roi_buffer)
-        if ellipse_raw is not None:
-            prev_ellipse = ellipse_raw
-            t_last = roi_buffer[-1].timestamp
-            nxt = int(np.searchsorted(frame_ts, t_last, side='right'))
-            if nxt < len(frame_list_chron):
-                event_samples.append({
-                    'ellipse':      ellipse_raw,
-                    'screen_coord': screen_chron[nxt],
-                    'timestamp':    int(t_last),
-                })
+        t_last = candidate_buf[-1][2]
+        nxt = int(np.searchsorted(frame_ts, t_last, side='right'))
+        if nxt < len(frame_list_chron):
+            new_ellipse = ((float(center[0]), float(center[1])), axes, angle)
+            event_samples.append({
+                'ellipse':      new_ellipse,
+                'screen_coord': screen_chron[nxt],
+                'timestamp':    int(t_last),
+            })
 
-        roi_buffer = []
+        candidate_buf = []
 
-    print(f"Event extraction: {len(event_samples)} event ellipses extracted.")
+    print(f"Template tracking: {len(event_samples)} event samples extracted.")
     return event_samples
 
 
@@ -427,36 +409,29 @@ def run_pipeline(opt):
     if opt.diff_plot:
         plot_pupil_diffs(pupil_centers, screen_coords)
 
+    events_np = eye_dataset.load_events_sorted(eye_key)
+    with timer("Event extraction"):
+        tt_config = TemplateTrackingConfig()
+        event_samples = template_tracking_stage(
+            events_np, eye_dataset.frame_list,
+            ellipses, screen_coords, valid_mask, tt_config,
+        )
+
+    if getattr(opt, 'event_diag', False):
+        from data.visualization import (plot_event_ellipse_diagnostic,
+                                        plot_combined_pupil_trajectory)
+        plot_event_ellipse_diagnostic(eye_dataset.frame_list, ellipses, event_samples)
+        combined_diag = merge_frame_event_samples(
+            ellipses, screen_coords, valid_mask, eye_dataset.frame_list, event_samples,
+        )
+        plot_combined_pupil_trajectory(combined_diag)
+
     with timer("Model training"):
         if opt.model == 'regressor':
-            tracking_config = TrackingConfig()
-            events_np = eye_dataset.load_events_sorted(eye_key)
-            with timer("Event extraction"):
-                event_samples = event_extraction_stage(
-                    events_np, eye_dataset.frame_list,
-                    ellipses, screen_coords, valid_mask, tracking_config,
-                )
             run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt,
                           event_samples=event_samples)
         elif opt.model == 'lstm':
-            tracking_config = TrackingConfig()
-            events_np = eye_dataset.load_events_sorted(eye_key)
-            with timer("Event extraction"):
-                event_samples = event_extraction_stage(
-                    events_np, eye_dataset.frame_list,
-                    ellipses, screen_coords, valid_mask, tracking_config,
-                )
-
-            if getattr(opt, 'event_diag', False):
-                from data.visualization import plot_event_ellipse_diagnostic
-                plot_event_ellipse_diagnostic(eye_dataset.frame_list, ellipses, event_samples)
-
             combined = merge_frame_event_samples(
                 ellipses, screen_coords, valid_mask, eye_dataset.frame_list, event_samples,
             )
-
-            if getattr(opt, 'event_diag', False):
-                from data.visualization import plot_combined_pupil_trajectory
-                plot_combined_pupil_trajectory(combined)
-
             run_lstm_combined(combined, gaze_config, opt)

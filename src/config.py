@@ -56,6 +56,15 @@ class TrackingConfig:
     num_events_roi: int = 80    # events to accumulate within ROI per batch
 
 @dataclass
+class TemplateTrackingConfig:
+    num_events: int = 20
+    lambda1: float = 0.8
+    lambda2: float = 1.2
+    convergence: float = 0.01
+    max_icp_iter: int = 50
+    num_boundary: int = 360
+
+@dataclass
 class KDEConfig:
     pupil_radius: int = 30
     bandwidth_large: float = 35.0

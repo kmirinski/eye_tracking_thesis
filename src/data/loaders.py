@@ -46,11 +46,11 @@ def read_aerdat(filepath, mode):
         return event_list
 
 def read_events_txt(filepath, mode):
-    """Parse ev_eye text events: 'timestamp row col polarity' per line.
+    """Parse ev_eye text events: 'timestamp x y polarity' per line.
     Returns same layout as read_aerdat: columns [polarity, row, col, timestamp].
     """
-    data = np.loadtxt(filepath, dtype=np.int64)  # (N, 4): ts, row, col, pol
-    events = data[:, [3, 1, 2, 0]]               # reorder to: pol, row, col, ts
+    data = np.loadtxt(filepath, dtype=np.int64)  # (N, 4): ts, x(col), y(row), pol
+    events = data[:, [3, 2, 1, 0]]               # reorder to: pol, row, col, ts
     if mode == 'np':
         return events
     elif mode == 'stack':
