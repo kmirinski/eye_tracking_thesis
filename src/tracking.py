@@ -1,21 +1,19 @@
+import cv2
 import numpy as np
-from ellipse import LsqEllipse
+from scipy.spatial import cKDTree
 
 from data.loaders import EyeDataset, Frame, Event
 from processing.frame_detection import extract_pupil
-from config import TrackingConfig
+from config import TrackingConfig, TemplateTrackingConfig
 
 
 def fit_ellipse(events):
     if len(events) < 5:
         return None
 
-    points = np.array([[e.col, e.row] for e in events])
+    points = np.array([[e.col, e.row] for e in events], dtype=np.float32).reshape(-1, 1, 2)
     try:
-        lsq_ellipse = LsqEllipse()
-        lsq_ellipse.fit(points)
-        center, width, height, phi = lsq_ellipse.as_parameters()
-        return (tuple(center), (width, height), phi)
+        return cv2.fitEllipse(points)
     except Exception:
         return None
 
@@ -55,12 +53,13 @@ def get_roi_events(events, prev_ellipse, expansion_factor=1.5):
 
     roi_events = []
 
+    phi_rad = np.deg2rad(phi_p)
+    cos_phi = np.cos(-phi_rad)
+    sin_phi = np.sin(-phi_rad)
+
     for event in events:
         dx = event.col - xp
         dy = event.row - yp
-
-        cos_phi = np.cos(-phi_p)
-        sin_phi = np.sin(-phi_p)
 
         rotated_x = dx * cos_phi - dy * sin_phi
         rotated_y = dx * sin_phi + dy * cos_phi
@@ -71,6 +70,46 @@ def get_roi_events(events, prev_ellipse, expansion_factor=1.5):
             roi_events.append(event)
 
     return roi_events
+
+
+def sample_ellipse_boundary(ellipse, num_points=360):
+    (cx, cy), (w, h), angle_deg = ellipse
+    theta = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
+    pts = np.column_stack([(w / 2) * np.cos(theta), (h / 2) * np.sin(theta)])
+    phi = np.deg2rad(angle_deg)
+    cos_phi, sin_phi = np.cos(phi), np.sin(phi)
+    R = np.array([[cos_phi, -sin_phi],
+                  [sin_phi, cos_phi]])
+    pts = pts @ R.T
+    pts[:, 0] += cx
+    pts[:, 1] += cy
+    return pts
+
+
+def select_candidate_events(event_coords, center, gamma_bar, lambda1, lambda2):
+    dists = np.linalg.norm(event_coords - center, axis=1)
+    mask = (dists > lambda1 * gamma_bar) & (dists < lambda2 * gamma_bar)
+    return np.where(mask)[0]
+
+
+def points_to_edge_matching(candidates, boundary_Q, max_iter=50, convergence=0.01):
+    tree = cKDTree(boundary_Q)
+    P = candidates.copy()
+    T_total = np.zeros(2)
+
+    for _ in range(max_iter):
+        _, indices = tree.query(P)
+        nearest = boundary_Q[indices]
+        delta_T = np.mean(nearest - P, axis=0)
+
+        T_total += delta_T
+        P += delta_T
+
+        t_norm = np.linalg.norm(T_total)
+        if t_norm > 0 and np.linalg.norm(delta_T) / t_norm < convergence:
+            break
+
+    return T_total
 
 
 class PupilTracker:

@@ -1,4 +1,12 @@
+import os
 from dataclasses import dataclass
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DATASET_PATHS = {
+    "ebveye": os.path.join(BASE_DIR, "eye_data/ebveye"),
+    "ev_eye": os.path.join(BASE_DIR, "eye_data/ev_eye/raw_data"),
+}
 
 @dataclass
 class FrameDetectionConfig:
@@ -11,6 +19,7 @@ class FrameDetectionConfig:
     center_max: tuple = None        # (x_max, y_max) accepted pupil center in px; None = no limit
     triangle_corner: str = None     # 'upper_right' (left eye) or 'upper_left' (right eye)
     triangle_size: int = 100         # leg length in px of the corner triangle to exclude
+    extra_triangle_corners: tuple = ()  # additional corners to exclude, e.g. ('lower_left',)
     min_ellipse_area: float = 210   # π * (w/2) * (h/2) in px²
 
 
@@ -42,9 +51,19 @@ def get_frame_detection_config(subject: int, eye: str) -> FrameDetectionConfig:
 
 @dataclass
 class TrackingConfig:
-    num_events: int = 2000
-    fit_threshold: float = 0.8
-    roi_expansion: float = 1.5
+    num_events: int = 2000       # legacy global tracker
+    fit_threshold: float = 0.8   # used by legacy global tracker only
+    roi_expansion: float = 1.1
+    num_events_roi: int = 80    # events to accumulate within ROI per batch
+
+@dataclass
+class TemplateTrackingConfig:
+    num_events: int = 20
+    lambda1: float = 0.8
+    lambda2: float = 1.2
+    convergence: float = 0.01
+    max_icp_iter: int = 50
+    num_boundary: int = 360
 
 @dataclass
 class KDEConfig:
@@ -93,7 +112,7 @@ class LSTMConfig:
     learning_rate: float = 2e-4
     lr_decay_rate: float = 0.98
     lr_decay_steps: int = 1000
-    early_stop_patience: int = 500           # epochs without val_loss improvement before stopping
+    early_stop_patience: int = 5000           # epochs without val_loss improvement before stopping
     fine_tune_lr: float = 2e-5              # 10× lower than initial LR
     fine_tune_epochs: int = 150
     fine_tune_batch_size: int = 32

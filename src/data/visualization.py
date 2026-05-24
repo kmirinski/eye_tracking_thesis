@@ -641,4 +641,162 @@ def plot_axes(rows: int, cols: int, images: list[tuple], centers: list[tuple]):
                 ax.plot(cx, cy, 'r+', markersize=15, markeredgewidth=2)
 
 
-    
+def plot_event_ellipse_diagnostic(frame_list, ellipses, event_samples):
+    """
+    Two-panel diagnostic for the event extraction stage.
+
+    Top two panels: cx and cy over time for frame-derived (blue) and
+    event-derived (orange) ellipses. Event ellipses should densely fill
+    the gaps between frames and follow the same trajectory.
+
+    Bottom two panels: distributions of w and h for both sources.
+    Frame and event ellipses should occupy similar ranges.
+
+    Prints a summary table of mean ± std for cx, cy, w, h.
+    """
+    frame_list_chron = frame_list[::-1]
+    ellipses_chron   = ellipses[::-1]
+
+    # Collect frame ellipse data
+    f_ts, f_cx, f_cy, f_w, f_h = [], [], [], [], []
+    for frame, ell in zip(frame_list_chron, ellipses_chron):
+        if ell is None:
+            continue
+        (cx, cy), (w, h), _ = ell
+        f_ts.append(frame.timestamp)
+        f_cx.append(cx);  f_cy.append(cy)
+        f_w.append(w);    f_h.append(h)
+
+    # Collect event ellipse data
+    e_ts, e_cx, e_cy, e_w, e_h = [], [], [], [], []
+    for s in event_samples:
+        (cx, cy), (w, h), _ = s['ellipse']
+        e_ts.append(s['timestamp'])
+        e_cx.append(cx);  e_cy.append(cy)
+        e_w.append(w);    e_h.append(h)
+
+    # Normalise timestamps to seconds
+    ts_min = min((min(f_ts) if f_ts else float('inf')),
+                 (min(e_ts) if e_ts else float('inf')))
+    f_t_sec = [(t - ts_min) / 1e6 for t in f_ts]
+    e_t_sec = [(t - ts_min) / 1e6 for t in e_ts]
+
+    # Print statistics
+    def _stats(arr, label):
+        a = np.array(arr)
+        print(f"  {label:>20s}:  mean={a.mean():.1f}  std={a.std():.1f}  "
+              f"min={a.min():.1f}  max={a.max():.1f}")
+
+    print("\n--- Event ellipse diagnostic ---")
+    print(f"Frame ellipses : {len(f_cx)}")
+    print(f"Event ellipses : {len(e_cx)}")
+    if len(e_cx) == 0:
+        print("No event ellipses extracted — check ROI size and num_events_roi.")
+        return
+    ratio = len(e_cx) / max(1, len(f_cx))
+    print(f"Ratio          : {ratio:.1f}× more event than frame samples")
+    print("Frame ellipse parameters:")
+    _stats(f_cx, 'cx'); _stats(f_cy, 'cy'); _stats(f_w, 'w'); _stats(f_h, 'h')
+    print("Event ellipse parameters:")
+    _stats(e_cx, 'cx'); _stats(e_cy, 'cy'); _stats(e_w, 'w'); _stats(e_h, 'h')
+
+    # Plot
+    fig, axes = plt.subplots(2, 2, figsize=(16, 8), dpi=150)
+
+    # cx over time
+    axes[0, 0].scatter(e_t_sec, e_cx, s=1.5, color='orange', alpha=0.4, label='event')
+    axes[0, 0].scatter(f_t_sec, f_cx, s=6,   color='steelblue', alpha=0.8, label='frame')
+    axes[0, 0].set_xlabel('Time (s)'); axes[0, 0].set_ylabel('cx (px)')
+    axes[0, 0].set_title('Pupil centre X over time')
+    axes[0, 0].legend(loc='upper right', markerscale=4)
+    axes[0, 0].grid(True, alpha=0.3)
+
+    # cy over time
+    axes[0, 1].scatter(e_t_sec, e_cy, s=1.5, color='orange', alpha=0.4, label='event')
+    axes[0, 1].scatter(f_t_sec, f_cy, s=6,   color='steelblue', alpha=0.8, label='frame')
+    axes[0, 1].set_xlabel('Time (s)'); axes[0, 1].set_ylabel('cy (px)')
+    axes[0, 1].set_title('Pupil centre Y over time')
+    axes[0, 1].legend(loc='upper right', markerscale=4)
+    axes[0, 1].grid(True, alpha=0.3)
+
+    # w distribution
+    axes[1, 0].hist(f_w, bins=40, color='steelblue', alpha=0.6, label='frame', density=True)
+    axes[1, 0].hist(e_w, bins=40, color='orange',    alpha=0.6, label='event', density=True)
+    axes[1, 0].set_xlabel('w (px)'); axes[1, 0].set_ylabel('Density')
+    axes[1, 0].set_title('Ellipse width distribution')
+    axes[1, 0].legend(); axes[1, 0].grid(True, alpha=0.3)
+
+    # h distribution
+    axes[1, 1].hist(f_h, bins=40, color='steelblue', alpha=0.6, label='frame', density=True)
+    axes[1, 1].hist(e_h, bins=40, color='orange',    alpha=0.6, label='event', density=True)
+    axes[1, 1].set_xlabel('h (px)'); axes[1, 1].set_ylabel('Density')
+    axes[1, 1].set_title('Ellipse height distribution')
+    axes[1, 1].legend(); axes[1, 1].grid(True, alpha=0.3)
+
+    plt.suptitle('Event extraction diagnostic  —  blue = frame-derived, orange = event-derived',
+                 fontsize=11)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_combined_pupil_trajectory(combined, title='Pupil trajectory — frames and events'):
+    """
+    Line plot of pupil cx and cy over time for a chronologically sorted combined
+    sample list (as returned by merge_frame_event_samples).
+
+    Each sample must have keys: 'ellipse', 'timestamp', 'source' ('frame'|'event').
+
+    Frame samples are drawn as large markers on top of the line so you can see
+    exactly where frames fall and how densely events fill the gaps between them.
+    """
+    ts   = np.array([s['timestamp'] for s in combined], dtype=np.float64)
+    cx   = np.array([s['ellipse'][0][0] for s in combined])
+    cy   = np.array([s['ellipse'][0][1] for s in combined])
+    src  = np.array([s['source'] for s in combined])
+
+    t_sec = (ts - ts[0]) / 1e6
+
+    frame_mask = src == 'frame'
+    event_mask = src == 'event'
+
+    fig, (ax_x, ax_y) = plt.subplots(2, 1, figsize=(16, 6), sharex=True, dpi=150)
+
+    for ax, vals, label in [(ax_x, cx, 'cx (px)'), (ax_y, cy, 'cy (px)')]:
+        ax.plot(t_sec, vals, color='gray', linewidth=0.5, alpha=0.5, zorder=1)
+        ax.scatter(t_sec[event_mask], vals[event_mask],
+                   s=2, color='orange', alpha=0.6, label='event', zorder=2)
+        ax.scatter(t_sec[frame_mask], vals[frame_mask],
+                   s=20, color='steelblue', alpha=0.9, label='frame', zorder=3)
+        ax.set_ylabel(label)
+        ax.legend(loc='upper right', markerscale=3)
+        ax.grid(True, alpha=0.3)
+
+    ax_x.set_title(title)
+    ax_y.set_xlabel('Time (s)')
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_training_history(history, title='LSTM training history'):
+    """
+    Plot training vs validation loss over epochs.
+
+    Args:
+        history: dict with keys 'loss' and 'val_loss' (as stored in
+                 LSTMGazeEstimator.history after fit()).
+        title:   figure title, e.g. 'Subject 22 fold'.
+    """
+    loss     = history['loss']
+    val_loss = history['val_loss']
+    epochs   = range(1, len(loss) + 1)
+
+    fig, ax = plt.subplots(figsize=(8, 4), dpi=130)
+    ax.plot(epochs, loss,     color='steelblue', label='Train loss')
+    ax.plot(epochs, val_loss, color='orange',    label='Val loss')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('MSE loss')
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()

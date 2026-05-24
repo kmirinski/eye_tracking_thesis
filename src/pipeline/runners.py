@@ -2,7 +2,7 @@ import numpy as np
 
 from data.visualization import plot_gaze_predictions
 from models.polynomial import GazeEstimator
-from models.lstm import LSTMGazeEstimator, build_lstm_sequences
+from models.lstm import LSTMGazeEstimator, build_lstm_sequences, build_lstm_sequences_combined
 from config import GazeConfig, LSTMConfig
 
 
@@ -40,8 +40,9 @@ def _fov_rect(fov, fov_center, gaze_config):
 
 def split_by_label(pupil_centers, screen_coords, val_ratio, rng=None):
     """
-    For each unique label (screen coordinate), assign 80% of its frames to
-    training and 20% to validation, sampling randomly within each label group.
+    For each unique label (screen coordinate), assign val_ratio of its frames to
+    validation and the rest to training, sampling randomly within each label group.
+    Suitable for ebveye saccadic data where many frames share the exact same label.
     """
     if rng is None:
         rng = np.random.default_rng(42)
@@ -63,10 +64,43 @@ def split_by_label(pupil_centers, screen_coords, val_ratio, rng=None):
             screen_coords[train_idx], screen_coords[val_idx])
 
 
-def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeConfig, opt):
+def split_randomly(pupil_centers, screen_coords, train_ratio, val_ratio, rng=None):
+    """
+    Shuffle all (pupil_center, screen_coord) pairs together (seed 42), then
+    take the first train_ratio as training and the next val_ratio as validation.
+    Suitable for ev_eye where gaze labels are continuous floats with no repeated values.
+    """
+    if rng is None:
+        rng = np.random.default_rng(42)
+    idx = np.arange(len(pupil_centers))
+    rng.shuffle(idx)
+    n_train = int(len(idx) * train_ratio)
+    n_val   = int(len(idx) * val_ratio)
+    train_idx = idx[:n_train]
+    val_idx   = idx[n_train:n_train + n_val]
+    return (pupil_centers[train_idx], pupil_centers[val_idx],
+            screen_coords[train_idx], screen_coords[val_idx])
+
+
+def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeConfig, opt,
+                  event_samples=None):
+    dataset = getattr(opt, 'dataset', 'ebveye')
 
     pupil_centers = np.round(pupil_centers[valid_mask], 2)
     screen_coords = np.round(screen_coords[valid_mask], 2)
+
+    if event_samples:
+        # Extract (cx, cy) from each event ellipse — same (col, row) format as frame centers
+        ev_centers = np.array([[s['ellipse'][0][0], s['ellipse'][0][1]]
+                               for s in event_samples], dtype=np.float32)
+        ev_labels  = np.array([s['screen_coord'] for s in event_samples], dtype=np.float32)
+        # Drop any samples with zero-coord labels (transition/invalid frames)
+        valid_ev = ~np.all(ev_labels == 0, axis=1)
+        ev_centers = ev_centers[valid_ev]
+        ev_labels  = ev_labels[valid_ev]
+        pupil_centers = np.vstack([pupil_centers, ev_centers])
+        screen_coords = np.vstack([screen_coords, ev_labels])
+        print(f"Added {valid_ev.sum()} event ellipses → total samples: {len(pupil_centers)}")
 
     if opt.fov is not None:
         fov_w, fov_h = opt.fov
@@ -74,9 +108,15 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
         pupil_centers = pupil_centers[fov_mask]
         screen_coords = screen_coords[fov_mask]
 
-    pupil_train, pupil_val, screen_train, screen_val = split_by_label(
-        pupil_centers, screen_coords, val_ratio=gaze_config.val_ratio
-    )
+    if dataset == 'ev_eye':
+        pupil_train, pupil_val, screen_train, screen_val = split_randomly(
+            pupil_centers, screen_coords,
+            train_ratio=gaze_config.train_ratio, val_ratio=gaze_config.val_ratio,
+        )
+    else:
+        pupil_train, pupil_val, screen_train, screen_val = split_by_label(
+            pupil_centers, screen_coords, val_ratio=gaze_config.val_ratio,
+        )
 
     print(f"Training set size: {len(pupil_train)}")
     print(f"Validation set size: {len(pupil_val)}")
@@ -135,4 +175,39 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     if opt.ge_plots:
         val_pred = lstm_estimator.predict(eval_X)
         plot_gaze_predictions(val_pred, eval_y, title='LSTM — validation set',
+                              fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))
+
+
+def run_lstm_combined(combined_samples, gaze_config, opt):
+    lstm_config = LSTMConfig()
+
+    X, y = build_lstm_sequences_combined(combined_samples, seq_len=lstm_config.seq_len)
+    print(f"Total windows (frame+event): {len(X)}  (shape {X.shape})")
+
+    if opt.fov is not None:
+        fov_w, fov_h = opt.fov
+        fov_mask = fov_filter_mask(y, fov_w, fov_h, gaze_config, center=opt.fov_center)
+        X, y = X[fov_mask], y[fov_mask]
+
+    n = len(X)
+    n_train = int(n * gaze_config.train_ratio)
+    n_val   = int(n * gaze_config.val_ratio)
+
+    X_train, y_train = X[:n_train], y[:n_train]
+    X_val, y_val = X[n_train:n_train + n_val], y[n_train:n_train + n_val]
+    X_test, y_test = X[n_train + n_val:], y[n_train + n_val:]
+
+    print(f"Training set: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
+
+    lstm_estimator = LSTMGazeEstimator(lstm_config)
+    lstm_estimator.fit(X_train, y_train, X_val, y_val)
+
+    val_metrics = lstm_estimator.evaluate(X_val, y_val)
+    print(f"Validation MSE:        {val_metrics['mse']:.2f} pixels²")
+    print(f"Validation RMSE:       {val_metrics['rmse']:.2f} pixels")
+    print(f"Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
+
+    if opt.ge_plots:
+        val_pred = lstm_estimator.predict(X_val)
+        plot_gaze_predictions(val_pred, y_val, title='LSTM (frame+event) — validation set',
                               fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))

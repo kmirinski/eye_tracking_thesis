@@ -2,10 +2,11 @@ import numpy as np
 
 from data.visualization import write_ellipse_video, browse_ellipse_frames, browse_pupil_extraction, plot_pupil_centers_over_time_all, plot_pupil_centers_over_time, plot_pupil_diffs
 from utils import timer
-from data.loaders import EyeDataset
+from data.loaders import EyeDataset, EvEyeDataset
 from processing.frame_detection import extract_pupil_centers
-from config import FrameDetectionConfig, get_frame_detection_config, GazeConfig, get_gaze_config
-from pipeline.runners import run_regressor, run_lstm
+from config import FrameDetectionConfig, get_frame_detection_config, GazeConfig, get_gaze_config, TemplateTrackingConfig
+from pipeline.runners import run_regressor, run_lstm, run_lstm_combined
+from tracking import sample_ellipse_boundary, points_to_edge_matching
 
 
 def _find_sections(screen_chron):
@@ -178,6 +179,108 @@ def build_valid_mask(blink_mask, screen_coords, skip_frames,
     return valid[::-1]
 
 
+
+def template_tracking_stage(events_np, frame_list, ellipses,
+                            screen_coords, valid_mask, config: TemplateTrackingConfig):
+    frame_list_chron = frame_list[::-1]
+    ellipses_chron = ellipses[::-1]
+    screen_chron = screen_coords[::-1]
+    valid_chron = valid_mask[::-1]
+    frame_ts = np.array([f.timestamp for f in frame_list_chron], dtype=np.int64)
+
+    first_valid_idx = None
+    for i in range(len(valid_chron)):
+        if valid_chron[i] and ellipses_chron[i] is not None:
+            first_valid_idx = i
+            break
+    if first_valid_idx is None:
+        print("Template tracking: no valid frame with ellipse found, skipping.")
+        return []
+
+    first_valid_ts = frame_ts[first_valid_idx]
+    template_ellipse = ellipses_chron[first_valid_idx]
+    boundary_Q = sample_ellipse_boundary(template_ellipse, config.num_boundary)
+    center = np.array(template_ellipse[0], dtype=np.float64)
+    axes = template_ellipse[1]
+    angle = template_ellipse[2]
+    gamma_bar = np.mean(np.linalg.norm(boundary_Q - center, axis=1))
+
+    start_ev = int(np.searchsorted(events_np[:, 3], first_valid_ts, side='right'))
+
+    event_samples = []
+    candidate_buf = []
+    current_frame_ptr = first_valid_idx
+
+    for i in range(start_ev, len(events_np)):
+        polarity, row, col, ts = events_np[i]
+
+        while (current_frame_ptr + 1 < len(frame_list_chron) and
+               frame_ts[current_frame_ptr + 1] <= ts):
+            current_frame_ptr += 1
+            candidate_ell = ellipses_chron[current_frame_ptr]
+            if candidate_ell is not None:
+                template_ellipse = candidate_ell
+                boundary_Q = sample_ellipse_boundary(template_ellipse, config.num_boundary)
+                center = np.array(template_ellipse[0], dtype=np.float64)
+                axes = template_ellipse[1]
+                angle = template_ellipse[2]
+                gamma_bar = np.mean(np.linalg.norm(boundary_Q - center, axis=1))
+                candidate_buf = []
+
+        dist = np.sqrt((col - center[0]) ** 2 + (row - center[1]) ** 2)
+        if config.lambda1 * gamma_bar < dist < config.lambda2 * gamma_bar:
+            candidate_buf.append((col, row, ts))
+
+        if len(candidate_buf) < config.num_events:
+            continue
+
+        pts = np.array([(c[0], c[1]) for c in candidate_buf], dtype=np.float64)
+        T = points_to_edge_matching(pts, boundary_Q,
+                                    max_iter=config.max_icp_iter,
+                                    convergence=config.convergence)
+
+        center = center - T
+        boundary_Q = boundary_Q - T
+
+        t_last = candidate_buf[-1][2]
+        nxt = int(np.searchsorted(frame_ts, t_last, side='right'))
+        if nxt < len(frame_list_chron):
+            new_ellipse = ((float(center[0]), float(center[1])), axes, angle)
+            event_samples.append({
+                'ellipse':      new_ellipse,
+                'screen_coord': screen_chron[nxt],
+                'timestamp':    int(t_last),
+            })
+
+        candidate_buf = []
+
+    print(f"Template tracking: {len(event_samples)} event samples extracted.")
+    return event_samples
+
+
+def merge_frame_event_samples(ellipses, screen_coords, valid_mask, frame_list, event_samples):
+    """
+    Combine valid frame samples and event samples into a single chronologically sorted list.
+    Each entry: {'ellipse': ..., 'screen_coord': ..., 'timestamp': ...}
+    """
+    frame_list_chron = frame_list[::-1]
+    ellipses_chron   = ellipses[::-1]
+    screen_chron     = screen_coords[::-1]
+    valid_chron      = valid_mask[::-1]
+
+    frame_samples = [
+        {'ellipse': e, 'screen_coord': sc, 'timestamp': f.timestamp, 'source': 'frame'}
+        for f, e, sc, v in zip(frame_list_chron, ellipses_chron, screen_chron, valid_chron)
+        if v and e is not None
+    ]
+    for s in event_samples:
+        s.setdefault('source', 'event')
+
+    combined = sorted(frame_samples + event_samples, key=lambda x: x['timestamp'])
+    print(f"Combined samples: {len(frame_samples)} frame + {len(event_samples)} event = {len(combined)} total.")
+    return combined
+
+
 def pupil_extraction_stage(eye_dataset: EyeDataset, frame_config: FrameDetectionConfig):
     pupil_centers, ellipses = extract_pupil_centers(eye_dataset.frame_list, config=frame_config)
     screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
@@ -232,16 +335,29 @@ def compute_phase_labels(screen_coords_original_chron, screen_coords_relabeled_c
 
 
 def run_pipeline(opt):
-    eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
-    eye_index = 0 if opt.eye == 'left' else 1
+    dataset = getattr(opt, 'dataset', 'ebveye')
+    motion = getattr(opt, 'motion',  'saccadic')
     frame_config = get_frame_detection_config(opt.subject, opt.eye)
     gaze_config = get_gaze_config(opt.subject)
 
     print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
     print('Loading data from ' + opt.data_dir)
 
-    with timer("Collection"):
-        eye_dataset.collect_data(eye=eye_index)
+    if dataset == 'ev_eye':
+        frame_config.extra_triangle_corners = ('lower_left',)
+        eye_dataset = EvEyeDataset(
+            opt.data_dir, opt.subject, motion=motion, mode='np',
+            screen_width_px=gaze_config.screen_width_px,
+            screen_height_px=gaze_config.screen_height_px,
+        )
+        eye_key = opt.eye  # 'left' or 'right'
+        with timer("Collection"):
+            eye_dataset.collect_data(eye=eye_key)
+    else:
+        eye_dataset = EyeDataset(opt.data_dir, opt.subject, mode='stack')
+        eye_key = 0 if opt.eye == 'left' else 1
+        with timer("Collection"):
+            eye_dataset.collect_data(eye=eye_key, motion=motion)
 
     with timer("Pupil extraction"):
         pupil_centers, ellipses, screen_coords = pupil_extraction_stage(eye_dataset, frame_config)
@@ -251,15 +367,19 @@ def run_pipeline(opt):
 
     saccade_mask = None
     screen_coords_original = screen_coords.copy()
-    if opt.relabel:
+    if opt.relabel and motion == 'saccadic':
         with timer("Relabeling"):
             screen_coords, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
 
+    # skip_label_changes only makes sense for ebveye, where target jumps between
+    # discrete fixation points. For ev_eye, Tobii labels are continuous floats —
+    # every frame looks like a "change", which would invalidate everything.
+    skip_label_changes = (dataset == 'ebveye') and (motion == 'saccadic') and not opt.relabel
     valid_mask = build_valid_mask(
         blink_mask, screen_coords,
         skip_frames=gaze_config.saccade_skip_frames,
         saccade_mask=saccade_mask,
-        skip_label_changes=not opt.relabel,
+        skip_label_changes=skip_label_changes,
         post_blink_skip_frames=gaze_config.post_blink_skip_frames,
     )
 
@@ -290,8 +410,29 @@ def run_pipeline(opt):
     if opt.diff_plot:
         plot_pupil_diffs(pupil_centers, screen_coords)
 
+    events_np = eye_dataset.load_events_sorted(eye_key)
+    with timer("Event extraction"):
+        tt_config = TemplateTrackingConfig()
+        event_samples = template_tracking_stage(
+            events_np, eye_dataset.frame_list,
+            ellipses, screen_coords, valid_mask, tt_config,
+        )
+
+    if getattr(opt, 'event_diag', False):
+        from data.visualization import (plot_event_ellipse_diagnostic,
+                                        plot_combined_pupil_trajectory)
+        plot_event_ellipse_diagnostic(eye_dataset.frame_list, ellipses, event_samples)
+        combined_diag = merge_frame_event_samples(
+            ellipses, screen_coords, valid_mask, eye_dataset.frame_list, event_samples,
+        )
+        plot_combined_pupil_trajectory(combined_diag)
+
     with timer("Model training"):
         if opt.model == 'regressor':
-            run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt)
+            run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt,
+                          event_samples=event_samples)
         elif opt.model == 'lstm':
-            run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt)
+            combined = merge_frame_event_samples(
+                ellipses, screen_coords, valid_mask, eye_dataset.frame_list, event_samples,
+            )
+            run_lstm_combined(combined, gaze_config, opt)

@@ -2,6 +2,7 @@ import argparse
 import os
 
 from pipeline.pipeline import run_pipeline
+from config import DATASET_PATHS
 
 
 parser = argparse.ArgumentParser(description='Arguments for reading the data')
@@ -10,8 +11,10 @@ parser = argparse.ArgumentParser(description='Arguments for reading the data')
 parser.add_argument('--subject', type=int, default=22, help='choose subject')
 parser.add_argument('--eye', default='left', choices=['left', 'right'],
                     help='choose left or right eye dataset')
-parser.add_argument('--data_dir', default=os.path.join(os.getcwd(), 'eye_data'),
-                    help='absolute path to eye_data/, assumes same parent dir as this script by default')
+parser.add_argument('--dataset', default='ebveye', choices=list(DATASET_PATHS.keys()),
+                    help='dataset name; determines data path and loader')
+parser.add_argument('--motion', default='saccadic', choices=['saccadic', 'pursuit'],
+                    help='motion type to load: saccadic or smooth pursuit')
 parser.add_argument('--model', default="regressor", choices=['regressor', 'lstm'],
                     help='choose model type to estimate gaze')
 
@@ -27,6 +30,10 @@ parser.add_argument('--relabel_diag', action='store_true',
                     help='plot relabeling phase diagnostic (requires --relabel)')
 parser.add_argument('--diff_plot', action='store_true',
                     help='plot frame-to-frame pupil displacement over time with label-change markers')
+parser.add_argument('--event_diag', action='store_true',
+                    help='plot event extraction diagnostic: ellipse centres over time + size distributions (requires --model lstm)')
+parser.add_argument('--loss_plot', action='store_true',
+                    help='plot training vs validation loss curve after LSTM training')
 
 
 # Relabeling options
@@ -54,6 +61,7 @@ parser.add_argument('--fine_tune', action='store_true',
 
 if __name__ == '__main__':
     opt = parser.parse_args()
+    opt.data_dir = DATASET_PATHS[opt.dataset]
     if opt.cross_subject:
         if opt.model == 'lstm':
             from cross_subject_lstm import run
