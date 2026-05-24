@@ -205,14 +205,31 @@ class EvEyeDataset:
 
     def load_frame_data(self, eye):
         """Return list of (timestamp, path) sorted chronologically across all sessions."""
+        ts_ranges = []
+        for session in self.sessions:
+            startime_path = os.path.join(
+                self._davis_session_dir(eye, session), 'events', 'event_startime.txt')
+            with open(startime_path) as f:
+                startime_us = int(f.read().strip())
+            ts_ranges.append(startime_us)
+
+        ts_min = min(ts_ranges)
+        ts_max = max(ts_ranges) + 300_000_000  # 300s after last session start
+
         all_frames = []
+        n_dropped = 0
         for session in self.sessions:
             frames_dir = os.path.join(self._davis_session_dir(eye, session), 'frames')
             for path in glob_imgs(frames_dir):
                 fname = os.path.splitext(os.path.basename(path))[0]
                 parts = fname.split('_')
                 ts = int(parts[1])
+                if ts < ts_min or ts > ts_max:
+                    n_dropped += 1
+                    continue
                 all_frames.append((ts, path))
+        if n_dropped:
+            print(f'Dropped {n_dropped} frame(s) with outlier timestamps')
         all_frames.sort(key=lambda x: x[0])
         return all_frames
 

@@ -49,13 +49,21 @@ def _run_detection(frame: Frame, config: FrameDetectionConfig):
             valid = valid and config.center_min[0] < cx <= config.center_max[0]
             valid = valid and config.center_min[1] < cy <= config.center_max[1]
 
-        if config.triangle_corner == 'upper_right':
-            W = img.shape[1]
-            in_triangle = (cx - cy >= W - config.triangle_size)
-        elif config.triangle_corner == 'upper_left':
-            in_triangle = (cx + cy <= config.triangle_size)
-        else:
-            in_triangle = False
+        corners_to_check = list(config.extra_triangle_corners)
+        if config.triangle_corner:
+            corners_to_check.append(config.triangle_corner)
+
+        H, W = img.shape[:2]
+        in_triangle = False
+        for corner in corners_to_check:
+            if corner == 'upper_right':
+                in_triangle = in_triangle or (cx - cy >= W - config.triangle_size)
+            elif corner == 'upper_left':
+                in_triangle = in_triangle or (cx + cy <= config.triangle_size)
+            elif corner == 'lower_left':
+                in_triangle = in_triangle or (cy - cx >= H - config.triangle_size)
+            elif corner == 'lower_right':
+                in_triangle = in_triangle or (cx + cy >= W + H - config.triangle_size)
         valid = valid and not in_triangle
 
         if valid:

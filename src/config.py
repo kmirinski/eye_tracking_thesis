@@ -19,6 +19,7 @@ class FrameDetectionConfig:
     center_max: tuple = None        # (x_max, y_max) accepted pupil center in px; None = no limit
     triangle_corner: str = None     # 'upper_right' (left eye) or 'upper_left' (right eye)
     triangle_size: int = 100         # leg length in px of the corner triangle to exclude
+    extra_triangle_corners: tuple = ()  # additional corners to exclude, e.g. ('lower_left',)
     min_ellipse_area: float = 210   # π * (w/2) * (h/2) in px²
 
 

@@ -344,6 +344,7 @@ def run_pipeline(opt):
     print('Loading data from ' + opt.data_dir)
 
     if dataset == 'ev_eye':
+        frame_config.extra_triangle_corners = ('lower_left',)
         eye_dataset = EvEyeDataset(
             opt.data_dir, opt.subject, motion=motion, mode='np',
             screen_width_px=gaze_config.screen_width_px,
