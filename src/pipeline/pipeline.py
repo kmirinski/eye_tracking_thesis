@@ -283,7 +283,7 @@ def merge_frame_event_samples(ellipses, screen_coords, valid_mask, frame_list, e
 
 def pupil_extraction_stage(eye_dataset: EyeDataset, frame_config: FrameDetectionConfig):
     pupil_centers, ellipses = extract_pupil_centers(eye_dataset.frame_list, config=frame_config)
-    screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list])
+    screen_coords = np.array([(frame.row, frame.col) for frame in eye_dataset.frame_list], dtype=np.float64)
     return pupil_centers, ellipses, screen_coords
 
 

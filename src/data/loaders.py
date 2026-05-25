@@ -184,7 +184,7 @@ class EvEyeDataset:
                 try:
                     entry = json.loads(line)
                     gaze2d = entry.get('data', {}).get('gaze2d')
-                    if gaze2d is not None:
+                    if gaze2d is not None and 0 <= gaze2d[0] <= 1 and 0 <= gaze2d[1] <= 1:
                         davis_us = startime_us + int(entry['timestamp'] * 1e6)
                         records.append([davis_us, gaze2d[0], gaze2d[1]])
                 except (json.JSONDecodeError, KeyError):

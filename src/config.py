@@ -43,10 +43,23 @@ EBVEYE_FRAME_DETECTION_OVERRIDES: dict = {
 EV_EYE_FRAME_DETECTION_OVERRIDES: dict = {
     4:  {"extra_triangle_corners": ('lower_left', 'upper_left')},
     5: {"threshold": 20, "morph_kernel_size": 2, "extra_triangle_corners": ('lower_left', 'upper_left')},
-    6: {"threshold": 25, "morph_kernel_size": 3, "triangle_size": 180, "extra_triangle_corners": ('lower_left', "upper_right")},
+    6: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 180, "extra_triangle_corners": ('lower_left', "upper_right"), "max_ellipse_area": 5000},
+    7: {"morph_kernel_size": 2, "extra_triangle_corners": ('lower_left', 'upper_right'), "min_ellipse_area": 190},
+    8: {"morph_kernel_size": 2, "triangle_size": 150, "extra_triangle_corners": ('lower_left', 'upper_right'), "min_ellipse_area": 140},
     25: {"threshold": 30, "morph_kernel_size": 4, 'min_aspect_ratio': 0.38, "extra_triangle_corners": ('lower_left',)},
-    22: {"morph_kernel_size": 2, "extra_triangle_corners": ('lower_left',), "triangle_size": 200},
+    22: {"morph_kernel_size": 2, "triangle_size": 200, "extra_triangle_corners": ('lower_left',)},
+    29: {"threshold": 24, "morph_kernel_size": 2, "triangle_size": 200, "extra_triangle_corners": ('lower_left', 'upper_left'), "min_ellipse_area": 300}, # A bit sus
     30: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 120, "extra_triangle_corners": ('upper_left', 'upper_right')},
+    31: {"threshold": 20, "morph_kernel_size": 2, "extra_triangle_corners": ('upper_left', 'lower_left')},
+    32: {"morph_kernel_size": 2},
+    33: {"morph_kernel_size": 2},
+    34: {"threshold": 20, "morph_kernel_size": 2, 'min_aspect_ratio': 0.25, "triangle_size": 200, "extra_triangle_corners": ('lower_left',)},
+    35: {"triangle_size": 150, "extra_triangle_corners": ('upper_left', 'lower_left'), 'min_aspect_ratio': 0.25, "min_ellipse_area": 140},
+    36: {"threshold":20, "morph_kernel_size": 2, 'min_aspect_ratio': 0.25, "min_ellipse_area": 140},
+    40: {},
+    41: {},
+    42: {},
+    43: {},
     44: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 180, "extra_triangle_corners": ('lower_left',)},
 }
 
