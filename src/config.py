@@ -21,12 +21,12 @@ class FrameDetectionConfig:
     triangle_size: int = 100         # leg length in px of the corner triangle to exclude
     extra_triangle_corners: tuple = ()  # additional corners to exclude, e.g. ('lower_left',)
     min_ellipse_area: float = 210   # π * (w/2) * (h/2) in px²
+    max_ellipse_area: float = None  # π * (w/2) * (h/2) in px²; None = no limit
 
 
 # Per-subject overrides for FrameDetectionConfig.
 # Only list fields that differ from the dataclass defaults above.
-SUBJECT_FRAME_DETECTION_OVERRIDES: dict = {
-    # example:
+EBVEYE_FRAME_DETECTION_OVERRIDES: dict = {
     4:  {"threshold": 10, "morph_kernel_size": 4, 'min_aspect_ratio': 0.38, "triangle_size": 150},
     5:  {"threshold": 13, "morph_kernel_size": 3},
     6: {'threshold': 10, 'morph_kernel_size': 4, 'min_aspect_ratio': 0.25},
@@ -38,14 +38,28 @@ SUBJECT_FRAME_DETECTION_OVERRIDES: dict = {
     19: {'threshold': 15, 'morph_kernel_size': 2, 'min_aspect_ratio': 0.25},
     21: {'threshold': 10, 'morph_kernel_size': 4, 'min_aspect_ratio': 0.25},
     22: {'threshold': 10, 'morph_kernel_size': 4, 'min_aspect_ratio': 0.25},
+}
 
+EV_EYE_FRAME_DETECTION_OVERRIDES: dict = {
+    4:  {"extra_triangle_corners": ('lower_left', 'upper_left')},
+    5: {"threshold": 20, "morph_kernel_size": 2, "extra_triangle_corners": ('lower_left', 'upper_left')},
+    6: {"threshold": 25, "morph_kernel_size": 3, "triangle_size": 180, "extra_triangle_corners": ('lower_left', "upper_right")},
+    25: {"threshold": 30, "morph_kernel_size": 4, 'min_aspect_ratio': 0.38, "extra_triangle_corners": ('lower_left',)},
+    22: {"morph_kernel_size": 2, "extra_triangle_corners": ('lower_left',), "triangle_size": 200},
+    30: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 120, "extra_triangle_corners": ('upper_left', 'upper_right')},
+    44: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 180, "extra_triangle_corners": ('lower_left',)},
 }
 
 
-def get_frame_detection_config(subject: int, eye: str) -> FrameDetectionConfig:
+def get_frame_detection_config(subject: int, eye: str, dataset: str = 'ebveye') -> FrameDetectionConfig:
     """Return a FrameDetectionConfig with defaults + per-subject overrides applied."""
     corner = 'upper_right' if eye == 'left' else 'upper_left'
-    overrides = SUBJECT_FRAME_DETECTION_OVERRIDES.get(subject, {})
+
+    if dataset == 'ev_eye':
+        overrides = dict(EV_EYE_FRAME_DETECTION_OVERRIDES.get(subject, {}))
+        return FrameDetectionConfig(triangle_corner=corner, **overrides)
+
+    overrides = EBVEYE_FRAME_DETECTION_OVERRIDES.get(subject, {})
     return FrameDetectionConfig(triangle_corner=corner, **overrides)
 
 

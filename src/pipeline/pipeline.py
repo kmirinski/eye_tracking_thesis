@@ -337,14 +337,13 @@ def compute_phase_labels(screen_coords_original_chron, screen_coords_relabeled_c
 def run_pipeline(opt):
     dataset = getattr(opt, 'dataset', 'ebveye')
     motion = getattr(opt, 'motion',  'saccadic')
-    frame_config = get_frame_detection_config(opt.subject, opt.eye)
+    frame_config = get_frame_detection_config(opt.subject, opt.eye, dataset)
     gaze_config = get_gaze_config(opt.subject)
 
     print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
     print('Loading data from ' + opt.data_dir)
 
     if dataset == 'ev_eye':
-        frame_config.extra_triangle_corners = ('lower_left',)
         eye_dataset = EvEyeDataset(
             opt.data_dir, opt.subject, motion=motion, mode='np',
             screen_width_px=gaze_config.screen_width_px,

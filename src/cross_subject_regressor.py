@@ -57,7 +57,7 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center):
 
     print(f"Subject {subject}: preprocessing...")
     eye_index = 0 if eye == 'left' else 1
-    frame_config = get_frame_detection_config(subject, eye)
+    frame_config = get_frame_detection_config(subject, eye, dataset='ebveye')
     gaze_config = get_gaze_config(subject)
 
     eye_dataset = EyeDataset(data_dir, subject, mode='stack')
