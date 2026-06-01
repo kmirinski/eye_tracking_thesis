@@ -4,6 +4,7 @@ from data.visualization import plot_gaze_predictions
 from models.polynomial import GazeEstimator
 from models.lstm import LSTMGazeEstimator, build_lstm_sequences, build_lstm_sequences_combined
 from config import GazeConfig, LSTMConfig
+from processing.normalization import compute_pupil_stats, normalize_pupils
 
 
 def fov_filter_mask(screen_coords, fov_width_deg, fov_height_deg, gaze_config, center=None):
@@ -108,6 +109,12 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
         pupil_centers = pupil_centers[fov_mask]
         screen_coords = screen_coords[fov_mask]
 
+    # Z-score pupil coordinates by this subject's own stats, mirroring the per-subject
+    # normalization the cross-subject path applies (cross_subject_regressor.run_fold);
+    # single-subject is the N=1 case. Keeps both regressor paths on one normalization.
+    mean, std = compute_pupil_stats(pupil_centers)
+    pupil_centers = normalize_pupils(pupil_centers, mean, std)
+
     if dataset == 'ev_eye':
         pupil_train, pupil_val, screen_train, screen_val = split_randomly(
             pupil_centers, screen_coords,
@@ -129,9 +136,9 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
         eval_pupil, eval_screen = pupil_val, screen_val
 
         val_metrics = gaze_estimator.evaluate(eval_pupil, eval_screen)
-        print(f"Validation MSE:        {val_metrics['mse']:.2f} pixels²")
-        print(f"Validation RMSE: {val_metrics['rmse']:.2f} pixels")
-        print(f"Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
+        print(f"Validation MSE:        {val_metrics['mse']:.5f} pixels²")
+        print(f"Validation RMSE: {val_metrics['rmse']:.5f} pixels")
+        print(f"Validation Mean Error: {val_metrics['mean_error']:.5f} pixels")
 
         if opt.ge_plots:
             val_pred = gaze_estimator.predict(eval_pupil)
@@ -168,9 +175,9 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     eval_X, eval_y = X_val, y_val
 
     val_metrics = lstm_estimator.evaluate(eval_X, eval_y)
-    print(f"Validation MSE:        {val_metrics['mse']:.2f} pixels²")
-    print(f"Validation RMSE:       {val_metrics['rmse']:.2f} pixels")
-    print(f"Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
+    print(f"Validation MSE:        {val_metrics['mse']:.5f} pixels²")
+    print(f"Validation RMSE:       {val_metrics['rmse']:.5f} pixels")
+    print(f"Validation Mean Error: {val_metrics['mean_error']:.5f} pixels")
 
     if opt.ge_plots:
         val_pred = lstm_estimator.predict(eval_X)
@@ -203,9 +210,9 @@ def run_lstm_combined(combined_samples, gaze_config, opt):
     lstm_estimator.fit(X_train, y_train, X_val, y_val)
 
     val_metrics = lstm_estimator.evaluate(X_val, y_val)
-    print(f"Validation MSE:        {val_metrics['mse']:.2f} pixels²")
-    print(f"Validation RMSE:       {val_metrics['rmse']:.2f} pixels")
-    print(f"Validation Mean Error: {val_metrics['mean_error']:.2f} pixels")
+    print(f"Validation MSE:        {val_metrics['mse']:.5f} pixels²")
+    print(f"Validation RMSE:       {val_metrics['rmse']:.5f} pixels")
+    print(f"Validation Mean Error: {val_metrics['mean_error']:.5f} pixels")
 
     if opt.ge_plots:
         val_pred = lstm_estimator.predict(X_val)

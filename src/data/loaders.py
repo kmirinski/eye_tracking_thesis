@@ -44,7 +44,7 @@ def read_aerdat(filepath, mode):
         return events
     else:
         return event_list
-
+ 
 def read_events_txt(filepath, mode):
     """Parse ev_eye text events: 'timestamp x y polarity' per line.
     Returns same layout as read_aerdat: columns [polarity, row, col, timestamp].
@@ -146,14 +146,11 @@ class EvEyeDataset:
     SACCADIC_SESSIONS = ['session_1_0_1', 'session_1_0_2']
     PURSUIT_SESSIONS  = ['session_2_0_1', 'session_2_0_2']
 
-    def __init__(self, data_dir, subject, motion='saccadic', mode='np',
-                 screen_width_px=1920, screen_height_px=1080):
+    def __init__(self, data_dir, subject, motion='saccadic', mode='np'):
         self.data_dir = data_dir
         self.subject = subject
         self.motion = motion
         self.mode = mode
-        self.screen_width_px = screen_width_px
-        self.screen_height_px = screen_height_px
         self.sessions = (self.SACCADIC_SESSIONS if motion == 'saccadic'
                          else self.PURSUIT_SESSIONS)
 
@@ -268,11 +265,15 @@ class EvEyeDataset:
         best     = np.where(np.abs(gaze_ts[prev_idx] - frame_ts) <
                             np.abs(gaze_ts[idx]      - frame_ts), prev_idx, idx)
 
+        deltas_us = np.abs(gaze_ts[best] - frame_ts)
+        print(f"Frame-gaze alignment: median gap {np.median(deltas_us):.0f} µs, "
+              f"max {np.max(deltas_us):.0f} µs, 95th pct {np.percentile(deltas_us, 95):.0f} µs")
+
         frame_list = []
         for i, (ts, path) in enumerate(raw_frames):
             gi  = best[i]
-            col = int(round(gaze_records[gi, 1] * self.screen_width_px))
-            row = int(round(gaze_records[gi, 2] * self.screen_height_px))
+            col = gaze_records[gi, 1]
+            row = gaze_records[gi, 2]
             frame_list.append(Frame(row, col, path, ts))
 
         # Storage order: newest first (reverse of chronological)

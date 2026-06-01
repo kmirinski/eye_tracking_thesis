@@ -24,7 +24,7 @@ class GazeEstimator:
 
         train_pred = self.predict(pupil_centers)
         train_error = np.sqrt(np.mean(np.sum((train_pred - screen_coords)**2, axis=1)))
-        print(f"Training RMSE: {train_error:.2f} pixels")
+        print(f"Training RMSE: {train_error:.5f} pixels")
 
         return self
 

@@ -346,8 +346,6 @@ def run_pipeline(opt):
     if dataset == 'ev_eye':
         eye_dataset = EvEyeDataset(
             opt.data_dir, opt.subject, motion=motion, mode='np',
-            screen_width_px=gaze_config.screen_width_px,
-            screen_height_px=gaze_config.screen_height_px,
         )
         eye_key = opt.eye  # 'left' or 'right'
         with timer("Collection"):

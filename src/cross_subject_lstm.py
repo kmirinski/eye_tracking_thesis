@@ -23,7 +23,7 @@ from sklearn.preprocessing import StandardScaler
 sys.path.insert(0, os.path.dirname(__file__))
 
 from config import GazeConfig, LSTMConfig, get_frame_detection_config, get_gaze_config
-from data.loaders import EyeDataset
+from data.loaders import EyeDataset, EvEyeDataset
 from data.visualization import plot_gaze_predictions, plot_training_history
 from models.lstm import LSTMGazeEstimator, build_lstm_sequences
 from pipeline.pipeline import (
@@ -32,10 +32,10 @@ from pipeline.pipeline import (
 )
 from pipeline.runners import fov_filter_mask
 
-SUBJECTS   = [4, 5, 6, 7, 11, 12, 15, 18, 19, 21, 22]
-EYE        = 'left'
-FOV        = (40.0, 20.0)
-FOV_CENTER = (501, 879)          # set to (row_px, col_px) to shift the FoV window
+SUBJECTS = {
+    'ebveye': [4, 5, 6, 7, 11, 12, 15, 18, 19, 21, 22],
+    'ev_eye': [4, 5, 6, 7, 8, 33, 34, 35, 36, 44],
+}
 CACHE_DIR  = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
 
@@ -53,39 +53,47 @@ def _fov_rect(fov, fov_center):
     return (cr - half_h, cr + half_h, cc - half_w, cc + half_w)
 
 
-def load_subject_data(subject, data_dir, fov, fov_center):
-    cache_path = os.path.join(CACHE_DIR, f'subject_{subject}_{EYE}_scaled.npz')
+def load_subject_data(subject, data_dir, fov, fov_center,
+                      eye='left', dataset='ebveye', motion='saccadic'):
+    cache_path = os.path.join(CACHE_DIR, f'{dataset}_subject_{subject}_{eye}_lstm.npz')
     if os.path.exists(cache_path):
         print(f"  Subject {subject}: loading from cache")
         data = np.load(cache_path)
         return data['X'], data['y']
 
     print(f"  Subject {subject}: preprocessing...")
-    eye_index    = 0 if EYE == 'left' else 1
-    frame_config = get_frame_detection_config(subject, EYE, dataset='ebveye')
+    frame_config = get_frame_detection_config(subject, eye, dataset=dataset)
     gaze_config  = get_gaze_config(subject)
     lstm_config  = LSTMConfig()
 
-    eye_dataset = EyeDataset(data_dir, subject, mode='stack')
-    eye_dataset.collect_data(eye=eye_index)
+    if dataset == 'ev_eye':
+        eye_dataset = EvEyeDataset(
+            data_dir, subject, motion=motion, mode='np',
+        )
+        eye_dataset.collect_data(eye=eye)
+    else:
+        eye_index = 0 if eye == 'left' else 1
+        eye_dataset = EyeDataset(data_dir, subject, mode='stack')
+        eye_dataset.collect_data(eye=eye_index, motion=motion)
 
     pupil_centers, ellipses, screen_coords = pupil_extraction_stage(eye_dataset, frame_config)
     blink_mask = noise_flagging_stage(pupil_centers)
     sc, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
+    skip_label_changes = (dataset == 'ebveye')
     valid_mask = build_valid_mask(
         blink_mask, sc,
         skip_frames=gaze_config.saccade_skip_frames,
         saccade_mask=saccade_mask,
-        skip_label_changes=False,
+        skip_label_changes=skip_label_changes,
         post_blink_skip_frames=gaze_config.post_blink_skip_frames,
     )
 
     X, y = build_lstm_sequences(ellipses, sc, valid_mask, seq_len=lstm_config.seq_len)
 
-    fov_mask = fov_filter_mask(y, fov[0], fov[1], gaze_config, center=fov_center)
-    X, y = X[fov_mask], y[fov_mask]
+    if fov is not None:
+        fov_mask = fov_filter_mask(y, fov[0], fov[1], gaze_config, center=fov_center)
+        X, y = X[fov_mask], y[fov_mask]
 
-    # Per-subject standardization of 21D vectors (as specified in the paper)
     n, s, f = X.shape
     scaler = StandardScaler()
     X = scaler.fit_transform(X.reshape(-1, f)).reshape(n, s, f)
@@ -96,14 +104,17 @@ def load_subject_data(subject, data_dir, fov, fov_center):
     return X, y
 
 
-def run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=False, loss_plot=False):
-    X_val, y_val = load_subject_data(val_subject, data_dir, fov, fov_center)
+def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
+             fine_tune=False, loss_plot=False, eye='left', dataset='ebveye', motion='saccadic'):
+    X_val, y_val = load_subject_data(val_subject, data_dir, fov, fov_center,
+                                     eye=eye, dataset=dataset, motion=motion)
 
     X_parts, y_parts = [], []
-    for s in SUBJECTS:
+    for s in subjects:
         if s == val_subject:
             continue
-        X_s, y_s = load_subject_data(s, data_dir, fov, fov_center)
+        X_s, y_s = load_subject_data(s, data_dir, fov, fov_center,
+                                     eye=eye, dataset=dataset, motion=motion)
         X_parts.append(X_s)
         y_parts.append(y_s)
     X_train = np.concatenate(X_parts)
@@ -140,7 +151,7 @@ def run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=False, 
         X_eval, y_eval = X_val, y_val
 
     metrics = estimator.evaluate(X_eval, y_eval)
-    print(f"Subject {val_subject} val — mse={metrics['mse']:.2f}px²  mean={metrics['mean_error']:.2f}px  rmse={metrics['rmse']:.2f}px")
+    print(f"Subject {val_subject} val — mse={metrics['mse']:.5f}px²  mean={metrics['mean_error']:.5f}px  rmse={metrics['rmse']:.5f}px")
 
     if ge_plots:
         eval_pred = estimator.predict(X_eval)
@@ -153,47 +164,57 @@ def run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=False, 
     return metrics
 
 
-def main(data_dir, val_subject, ge_plots, fov=FOV, fov_center=FOV_CENTER, fine_tune=False, loss_plot=False):
-    # Warm up cache for all subjects before running folds
+def main(data_dir, val_subject, ge_plots, fov, fov_center,
+         fine_tune=False, loss_plot=False, eye='left', dataset='ebveye', motion='saccadic'):
+    subjects = SUBJECTS[dataset]
+
     print("=" * 60)
-    print("Preprocessing / loading subjects...")
+    print(f"Preprocessing / loading subjects ({dataset})...")
     print("=" * 60)
-    for s in SUBJECTS:
-        load_subject_data(s, data_dir, fov, fov_center)
+    for s in subjects:
+        load_subject_data(s, data_dir, fov, fov_center,
+                          eye=eye, dataset=dataset, motion=motion)
 
     if val_subject is not None:
-        if val_subject not in SUBJECTS:
-            raise ValueError(f"--val_subject {val_subject} is not in SUBJECTS list: {SUBJECTS}")
+        if val_subject not in subjects:
+            raise ValueError(f"--val_subject {val_subject} is not in SUBJECTS list for {dataset}: {subjects}")
         print()
         print("=" * 60)
         print(f"Fold: val = subject {val_subject}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
-        run_fold(val_subject, data_dir, ge_plots, fov, fov_center, fine_tune=fine_tune, loss_plot=loss_plot)
+        run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
+                 fine_tune=fine_tune, loss_plot=loss_plot,
+                 eye=eye, dataset=dataset, motion=motion)
         return
 
     results = {}
-    for s in SUBJECTS:
+    for s in subjects:
         print()
         print("=" * 60)
         print(f"Fold: val = subject {s}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
-        results[s] = run_fold(s, data_dir, ge_plots, fov, fov_center, fine_tune=fine_tune, loss_plot=loss_plot)
+        results[s] = run_fold(s, subjects, data_dir, ge_plots, fov, fov_center,
+                              fine_tune=fine_tune, loss_plot=loss_plot,
+                              eye=eye, dataset=dataset, motion=motion)
 
     print()
     print("=" * 60)
     print("Summary")
     print("=" * 60)
-    for s in SUBJECTS:
+    for s in subjects:
         m = results[s]
-        print(f"  {s:>3}: mean={m['mean_error']:.2f}px  rmse={m['rmse']:.2f}px  "
-              f"median={m['median_error']:.2f}px  std={m['std_error']:.2f}px")
-    mean_errors = [results[s]['mean_error'] for s in SUBJECTS]
-    print(f"\nOverall mean error: {np.mean(mean_errors):.2f} ± {np.std(mean_errors):.2f} px")
+        print(f"  {s:>3}: mean={m['mean_error']:.5f}px  rmse={m['rmse']:.5f}px  "
+              f"median={m['median_error']:.5f}px  std={m['std_error']:.5f}px")
+    mean_errors = [results[s]['mean_error'] for s in subjects]
+    print(f"\nOverall mean error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
 
 
 def run(opt):
-    fov = tuple(opt.fov) if opt.fov else FOV
-    fov_center = tuple(opt.fov_center) if opt.fov_center else FOV_CENTER
+    dataset = getattr(opt, 'dataset', 'ebveye')
+    motion = getattr(opt, 'motion', 'saccadic')
+    fov = tuple(opt.fov) if opt.fov else None
+    fov_center = tuple(opt.fov_center) if opt.fov_center else None
     main(opt.data_dir, opt.val_subject, opt.ge_plots, fov, fov_center,
          fine_tune=getattr(opt, 'fine_tune', False),
-         loss_plot=getattr(opt, 'loss_plot', False))
+         loss_plot=getattr(opt, 'loss_plot', False),
+         eye=opt.eye, dataset=dataset, motion=motion)

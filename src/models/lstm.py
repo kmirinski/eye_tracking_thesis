@@ -179,7 +179,7 @@ class LSTMGazeEstimator:
 
         train_pred = self.predict(X_train)
         train_rmse = np.sqrt(np.mean(np.sum((train_pred - y_train) ** 2, axis=1)))
-        print(f"LSTM Training RMSE: {train_rmse:.2f} pixels")
+        print(f"LSTM Training RMSE: {train_rmse:.5f} pixels")
 
         return self
 
@@ -216,7 +216,7 @@ class LSTMGazeEstimator:
 
         ft_pred = self.predict(X_ft)
         ft_rmse = np.sqrt(np.mean(np.sum((ft_pred - y_ft) ** 2, axis=1)))
-        print(f"LSTM Fine-tune RMSE (on fine-tune data): {ft_rmse:.2f} pixels")
+        print(f"LSTM Fine-tune RMSE (on fine-tune data): {ft_rmse:.5f} pixels")
         return self
 
     def predict(self, X):
