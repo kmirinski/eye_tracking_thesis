@@ -33,7 +33,7 @@ from pipeline.pipeline import (
     relabeling_stage,
     template_tracking_stage,
 )
-from pipeline.runners import fov_filter_mask, _fov_rect
+from pipeline.runners import fov_filter_mask, _fov_rect, split_randomly, split_by_label
 from processing.normalization import compute_pupil_stats, normalize_pupils
 
 SUBJECTS = {
@@ -122,10 +122,15 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
     return pupil_centers, screen_coords
 
 
-def run_fold(val_subject, subject_data, ge_plots, fov, fov_center):
+def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
+             fine_tune=False, dataset='ebveye'):
     """
     Train on all subjects except val_subject, evaluate on val_subject.
     Per-subject z-score normalization is applied before pooling.
+
+    When fine_tune is set, a fine_tune_ratio fraction of the held-out subject is
+    pooled into the training set (calibration) and the regressor is evaluated on the
+    remaining portion only.
     """
     gaze_config = GazeConfig()
 
@@ -151,22 +156,42 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center):
     pupil_val, screen_val = subject_data[val_subject]
     pupil_val = normalize_pupils(pupil_val, val_mean, val_std)
 
-    print(f"Train: {len(pupil_train)} frames  |  Val: {len(pupil_val)} frames")
+    if fine_tune:
+        # Split the held-out subject: calibration portion is pooled into training,
+        # the remainder becomes the evaluation set. Reuse the same split helpers as
+        # run_regressor (random for ev_eye's continuous labels, per-label for ebveye).
+        ft_ratio = gaze_config.fine_tune_ratio
+        if dataset == 'ev_eye':
+            pupil_calib, pupil_eval, screen_calib, screen_eval = split_randomly(
+                pupil_val, screen_val, train_ratio=ft_ratio, val_ratio=1 - ft_ratio,
+            )
+        else:
+            pupil_calib, pupil_eval, screen_calib, screen_eval = split_by_label(
+                pupil_val, screen_val, val_ratio=1 - ft_ratio,
+            )
+        pupil_train = np.concatenate([pupil_train, pupil_calib])
+        screen_train = np.concatenate([screen_train, screen_calib])
+        print(f"Fine-tuning: pooled {len(pupil_calib)} calibration frames from subject "
+              f"{val_subject} (~{ft_ratio*100:.0f}%) into training")
+    else:
+        pupil_eval, screen_eval = pupil_val, screen_val
+
+    print(f"Train: {len(pupil_train)} frames  |  Eval: {len(pupil_eval)} frames")
 
     results = {}
     for deg in gaze_config.poly_degrees:
         print(f"\n  --- Degree {deg} ---")
         estimator = GazeEstimator(degree=deg)
         estimator.fit(pupil_train, screen_train)
-        metrics = estimator.evaluate(pupil_val, screen_val)
+        metrics = estimator.evaluate(pupil_eval, screen_eval)
         results[deg] = metrics
         print(f"  mse={metrics['mse']:.5f}px²  mean={metrics['mean_error']:.5f}px  "
               f"rmse={metrics['rmse']:.5f}px  median={metrics['median_error']:.5f}px")
 
         if ge_plots:
-            val_pred = estimator.predict(pupil_val)
+            val_pred = estimator.predict(pupil_eval)
             plot_gaze_predictions(
-                val_pred, screen_val,
+                val_pred, screen_eval,
                 title=f'Subject {val_subject} — Degree {deg}',
                 fov_rect=_fov_rect(fov, fov_center, gaze_config),
             )
@@ -179,6 +204,7 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center):
 def run(opt):
     dataset = getattr(opt, 'dataset', 'ebveye')
     motion = getattr(opt, 'motion', 'saccadic')
+    fine_tune = getattr(opt, 'fine_tune', False)
     subjects = SUBJECTS[dataset]
 
     fov = tuple(opt.fov) if opt.fov else None
@@ -199,9 +225,10 @@ def run(opt):
             raise ValueError(f"--val_subject {opt.val_subject} is not in SUBJECTS list for {dataset}: {subjects}")
         print()
         print("=" * 60)
-        print(f"Fold: val = subject {opt.val_subject}")
+        print(f"Fold: val = subject {opt.val_subject}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
-        run_fold(opt.val_subject, subject_data, opt.ge_plots, fov, fov_center)
+        run_fold(opt.val_subject, subject_data, opt.ge_plots, fov, fov_center,
+                 fine_tune=fine_tune, dataset=dataset)
         return
 
     # Full LOO
@@ -209,9 +236,10 @@ def run(opt):
     for s in subjects:
         print()
         print("=" * 60)
-        print(f"Fold: val = subject {s}")
+        print(f"Fold: val = subject {s}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
-        fold_results = run_fold(s, subject_data, opt.ge_plots, fov, fov_center)
+        fold_results = run_fold(s, subject_data, opt.ge_plots, fov, fov_center,
+                                fine_tune=fine_tune, dataset=dataset)
         best_deg = min(fold_results, key=lambda d: fold_results[d]['mean_error'])
         all_results[s] = fold_results[best_deg]
 
