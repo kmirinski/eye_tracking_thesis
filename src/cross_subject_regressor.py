@@ -22,7 +22,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import GazeConfig, TemplateTrackingConfig, get_frame_detection_config, get_gaze_config
+from config import (CROSS_SUBJECT_SUBJECTS, GazeConfig, TemplateTrackingConfig,
+                    get_frame_detection_config, get_gaze_config)
 from data.loaders import EyeDataset, EvEyeDataset
 from data.visualization import plot_gaze_predictions
 from models.polynomial import GazeEstimator
@@ -36,10 +37,6 @@ from pipeline.pipeline import (
 from pipeline.runners import fov_filter_mask, _fov_rect, split_randomly, split_by_label
 from processing.normalization import compute_pupil_stats, normalize_pupils
 
-SUBJECTS = {
-    'ebveye': [4, 5, 6, 7, 11, 12, 15, 18, 19, 22],
-    'ev_eye': [4, 5, 6, 7, 8, 33, 34, 35, 36, 44],
-}
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
 
@@ -205,7 +202,7 @@ def run(opt):
     dataset = getattr(opt, 'dataset', 'ebveye')
     motion = getattr(opt, 'motion', 'saccadic')
     fine_tune = getattr(opt, 'fine_tune', False)
-    subjects = SUBJECTS[dataset]
+    subjects = CROSS_SUBJECT_SUBJECTS[dataset]
 
     fov = tuple(opt.fov) if opt.fov else None
     fov_center = tuple(opt.fov_center) if opt.fov_center else None
@@ -222,7 +219,7 @@ def run(opt):
 
     if opt.val_subject is not None:
         if opt.val_subject not in subjects:
-            raise ValueError(f"--val_subject {opt.val_subject} is not in SUBJECTS list for {dataset}: {subjects}")
+            raise ValueError(f"--val_subject {opt.val_subject} is not in CROSS_SUBJECT_SUBJECTS list for {dataset}: {subjects}")
         print()
         print("=" * 60)
         print(f"Fold: val = subject {opt.val_subject}" + (" (with fine-tuning)" if fine_tune else ""))

@@ -22,7 +22,8 @@ from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import GazeConfig, LSTMConfig, get_frame_detection_config, get_gaze_config
+from config import (CROSS_SUBJECT_SUBJECTS, GazeConfig, LSTMConfig,
+                    get_frame_detection_config, get_gaze_config)
 from data.loaders import EyeDataset, EvEyeDataset
 from data.visualization import plot_gaze_predictions, plot_training_history
 from models.lstm import LSTMGazeEstimator, build_lstm_sequences
@@ -32,10 +33,6 @@ from pipeline.pipeline import (
 )
 from pipeline.runners import fov_filter_mask
 
-SUBJECTS = {
-    'ebveye': [4, 5, 6, 7, 11, 12, 15, 18, 19, 21, 22],
-    'ev_eye': [4, 5, 6, 7, 8, 33, 34, 35, 36, 44],
-}
 CACHE_DIR  = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
 
@@ -167,7 +164,7 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
 
 def main(data_dir, val_subject, ge_plots, fov, fov_center,
          fine_tune=False, loss_plot=False, eye='left', dataset='ebveye', motion='saccadic'):
-    subjects = SUBJECTS[dataset]
+    subjects = CROSS_SUBJECT_SUBJECTS[dataset]
 
     print("=" * 60)
     print(f"Preprocessing / loading subjects ({dataset})...")
@@ -178,7 +175,7 @@ def main(data_dir, val_subject, ge_plots, fov, fov_center,
 
     if val_subject is not None:
         if val_subject not in subjects:
-            raise ValueError(f"--val_subject {val_subject} is not in SUBJECTS list for {dataset}: {subjects}")
+            raise ValueError(f"--val_subject {val_subject} is not in CROSS_SUBJECT_SUBJECTS list for {dataset}: {subjects}")
         print()
         print("=" * 60)
         print(f"Fold: val = subject {val_subject}" + (" (with fine-tuning)" if fine_tune else ""))

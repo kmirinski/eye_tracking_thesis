@@ -129,6 +129,15 @@ def get_gaze_config(subject: int) -> GazeConfig:
     return GazeConfig(**overrides)
 
 
+# Subjects included in leave-one-out cross-subject evaluation, per dataset.
+# Shared by both the regressor (cross_subject_regressor.py) and LSTM
+# (cross_subject_lstm.py) cross-subject runners.
+CROSS_SUBJECT_SUBJECTS: dict = {
+    'ebveye': [4, 5, 6, 7, 11, 12, 15, 18, 19, 21, 22],
+    'ev_eye': [4, 5, 6, 7, 8, 33, 34, 35, 36, 44],
+}
+
+
 @dataclass
 class LSTMConfig:
     seq_len: int = 10
