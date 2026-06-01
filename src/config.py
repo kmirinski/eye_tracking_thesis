@@ -103,6 +103,7 @@ class GazeConfig:
     poly_degrees: list = (5, 6, 7, 8, 12)
     train_ratio: float = 0.8
     val_ratio: float = 0.2
+    fine_tune_ratio: float = 0.4         # fraction of held-out subject data used for fine-tuning/calibration
     saccade_skip_frames: int = 20
     relabel_diff_threshold: float = 1.5  # px; eye displacement below this = stable fixation
     relabel_max_frames: int = 20         # safety cap: never relabel more than this many frames per label change
@@ -143,5 +144,4 @@ class LSTMConfig:
     fine_tune_lr: float = 2e-5              # 10× lower than initial LR
     fine_tune_epochs: int = 150
     fine_tune_batch_size: int = 32
-    fine_tune_ratio: float = 0.4            # fraction of val subject data used for fine-tuning
     freeze_lstm: bool = True                # if True, freeze LSTM layer during fine-tuning

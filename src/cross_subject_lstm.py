@@ -133,11 +133,12 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
 
     if fine_tune:
         # Stratified sampling: take fine_tune_ratio fraction of each unique label's sequences
+        fine_tune_ratio = GazeConfig().fine_tune_ratio
         unique_labels = np.unique(y_val, axis=0)
         ft_indices = []
         for label in unique_labels:
             label_idx = np.where(np.all(y_val == label, axis=1))[0]
-            n_sample = max(1, int(len(label_idx) * lstm_config.fine_tune_ratio))
+            n_sample = max(1, int(len(label_idx) * fine_tune_ratio))
             ft_indices.extend(np.random.choice(label_idx, n_sample, replace=False))
         ft_indices = np.array(ft_indices)
         eval_indices = np.setdiff1d(np.arange(len(X_val)), ft_indices)
@@ -145,7 +146,7 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
         X_ft,   y_ft   = X_val[ft_indices],  y_val[ft_indices]
         X_eval, y_eval = X_val[eval_indices], y_val[eval_indices]
         print(f"Fine-tuning on {len(ft_indices)} sequences from subject {val_subject} "
-              f"({len(unique_labels)} labels × ~{lstm_config.fine_tune_ratio*100:.0f}% each)...")
+              f"({len(unique_labels)} labels × ~{fine_tune_ratio*100:.0f}% each)...")
         estimator.fine_tune(X_ft, y_ft)
     else:
         X_eval, y_eval = X_val, y_val
