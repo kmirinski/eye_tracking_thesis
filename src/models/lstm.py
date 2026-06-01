@@ -230,6 +230,7 @@ class LSTMGazeEstimator:
         y = np.array(y)
         errors = predictions - y
         euclidean = np.sqrt(np.sum(errors ** 2, axis=1))
+        abs_err = np.abs(errors)  # col 0 = vertical (row), col 1 = horizontal (col)
         return {
             'mse':          np.mean(np.sum(errors ** 2, axis=1)),
             'rmse':         np.sqrt(np.mean(np.sum(errors ** 2, axis=1))),
@@ -237,4 +238,8 @@ class LSTMGazeEstimator:
             'std_error':    np.std(euclidean),
             'max_error':    np.max(euclidean),
             'median_error': np.median(euclidean),
+            'mean_error_v':   np.mean(abs_err[:, 0]),
+            'mean_error_h':   np.mean(abs_err[:, 1]),
+            'median_error_v': np.median(abs_err[:, 0]),
+            'median_error_h': np.median(abs_err[:, 1]),
         }

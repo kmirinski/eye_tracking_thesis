@@ -31,7 +31,7 @@ from pipeline.pipeline import (
     build_valid_mask, noise_flagging_stage,
     pupil_extraction_stage, relabeling_stage,
 )
-from pipeline.runners import fov_filter_mask
+from pipeline.runners import fov_filter_mask, errors_to_degrees
 
 CACHE_DIR  = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
@@ -149,7 +149,10 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
         X_eval, y_eval = X_val, y_val
 
     metrics = estimator.evaluate(X_eval, y_eval)
-    print(f"Subject {val_subject} val — mse={metrics['mse']:.5f}px²  mean={metrics['mean_error']:.5f}px  rmse={metrics['rmse']:.5f}px")
+    v_deg, h_deg = errors_to_degrees(metrics['mean_error_v'], metrics['mean_error_h'],
+                                     GazeConfig(), normalized=(dataset == 'ev_eye'))
+    print(f"Subject {val_subject} val — mse={metrics['mse']:.5f}px²  mean={metrics['mean_error']:.5f}px  "
+          f"rmse={metrics['rmse']:.5f}px  | h={h_deg:.2f}°  v={v_deg:.2f}°")
 
     if ge_plots:
         eval_pred = estimator.predict(X_eval)
@@ -199,12 +202,22 @@ def main(data_dir, val_subject, ge_plots, fov, fov_center,
     print("=" * 60)
     print("Summary")
     print("=" * 60)
+    gaze_config = GazeConfig()
+    normalized = (dataset == 'ev_eye')
+    h_degs, v_degs = [], []
     for s in subjects:
         m = results[s]
+        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
+                                         gaze_config, normalized=normalized)
+        h_degs.append(h_deg)
+        v_degs.append(v_deg)
         print(f"  {s:>3}: mean={m['mean_error']:.5f}px  rmse={m['rmse']:.5f}px  "
-              f"median={m['median_error']:.5f}px  std={m['std_error']:.5f}px")
+              f"median={m['median_error']:.5f}px  std={m['std_error']:.5f}px  "
+              f"| h={h_deg:.2f}°  v={v_deg:.2f}°")
     mean_errors = [results[s]['mean_error'] for s in subjects]
     print(f"\nOverall mean error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
+    print(f"Overall per-axis: horizontal {np.mean(h_degs):.2f} ± {np.std(h_degs):.2f}°  |  "
+          f"vertical {np.mean(v_degs):.2f} ± {np.std(v_degs):.2f}°")
 
 
 def run(opt):

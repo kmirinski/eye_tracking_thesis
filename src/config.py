@@ -149,8 +149,8 @@ class LSTMConfig:
     learning_rate: float = 2e-4
     lr_decay_rate: float = 0.98
     lr_decay_steps: int = 1000
-    early_stop_patience: int = 5000           # epochs without val_loss improvement before stopping
+    early_stop_patience: int = 50           # epochs without val_loss improvement before stopping
     fine_tune_lr: float = 2e-5              # 10× lower than initial LR
-    fine_tune_epochs: int = 150
+    fine_tune_epochs: int = 1500
     fine_tune_batch_size: int = 32
     freeze_lstm: bool = True                # if True, freeze LSTM layer during fine-tuning

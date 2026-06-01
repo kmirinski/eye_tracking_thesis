@@ -7,6 +7,20 @@ from config import GazeConfig, LSTMConfig
 from processing.normalization import compute_pupil_stats, normalize_pupils
 
 
+def errors_to_degrees(err_v, err_h, gaze_config, normalized):
+    """Convert per-axis label-unit errors to degrees of visual angle.
+
+    Label/error column 0 = vertical (row, height/screen_fov_y_deg), column 1 =
+    horizontal (col, width/screen_fov_x_deg). Linear FoV approximation, matching
+    fov_filter_mask. normalized=True for ev_eye ([0,1] labels), False for ebveye (px).
+    """
+    if normalized:
+        return (err_v * gaze_config.screen_fov_y_deg,
+                err_h * gaze_config.screen_fov_x_deg)
+    return (err_v / (gaze_config.screen_height_px / gaze_config.screen_fov_y_deg),
+            err_h / (gaze_config.screen_width_px  / gaze_config.screen_fov_x_deg))
+
+
 def fov_filter_mask(screen_coords, fov_width_deg, fov_height_deg, gaze_config, center=None):
     px_per_deg_x = gaze_config.screen_width_px / gaze_config.screen_fov_x_deg
     px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
