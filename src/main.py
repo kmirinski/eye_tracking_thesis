@@ -57,6 +57,8 @@ parser.add_argument('--val_subject', type=int, default=None,
                     help='subject to hold out for evaluation (cross-subject mode only); if omitted, runs full LOO')
 parser.add_argument('--fine_tune', action='store_true',
                     help='fine-tune the cross-subject LSTM on a small portion of the val subject\'s data')
+parser.add_argument('--lstm_events', action='store_true',
+                    help='cross-subject LSTM: include event ellipses (frame+event) instead of frame-only')
 
 
 if __name__ == '__main__':

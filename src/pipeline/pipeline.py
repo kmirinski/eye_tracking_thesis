@@ -364,7 +364,7 @@ def run_pipeline(opt):
 
     saccade_mask = None
     screen_coords_original = screen_coords.copy()
-    if opt.relabel and motion == 'saccadic':
+    if opt.relabel and motion == 'saccadic' and dataset != 'ev_eye':
         with timer("Relabeling"):
             screen_coords, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
 

@@ -135,6 +135,7 @@ def get_gaze_config(subject: int) -> GazeConfig:
 CROSS_SUBJECT_SUBJECTS: dict = {
     'ebveye': [4, 5, 6, 7, 11, 12, 15, 18, 19, 21, 22],
     'ev_eye': [4, 5, 6, 7, 8, 33, 34, 35, 36, 44],
+    # 'ev_eye': [33, 34, 35, 36, 44],
 }
 
 
@@ -144,13 +145,13 @@ class LSTMConfig:
     lstm_units: int = 128
     dense_units: tuple = (64, 32, 16)
     l1_reg: float = 1e-4
-    epochs: int = 1500
-    batch_size: int = 10
+    epochs: int = 100
+    batch_size: int = 32
     learning_rate: float = 2e-4
     lr_decay_rate: float = 0.98
     lr_decay_steps: int = 1000
-    early_stop_patience: int = 50           # epochs without val_loss improvement before stopping
+    early_stop_patience: int = 15           # epochs without val_loss improvement before stopping
     fine_tune_lr: float = 2e-5              # 10× lower than initial LR
-    fine_tune_epochs: int = 1500
+    fine_tune_epochs: int = 150
     fine_tune_batch_size: int = 32
     freeze_lstm: bool = True                # if True, freeze LSTM layer during fine-tuning

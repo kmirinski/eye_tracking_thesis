@@ -74,7 +74,7 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
     pupil_centers, ellipses, screen_coords = pupil_extraction_stage(eye_dataset, frame_config)
     blink_mask = noise_flagging_stage(pupil_centers)
 
-    if relabel:
+    if relabel and motion == 'saccadic' and dataset != 'ev_eye':
         sc, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
     else:
         sc, saccade_mask = screen_coords, None

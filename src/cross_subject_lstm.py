@@ -22,14 +22,14 @@ from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import (CROSS_SUBJECT_SUBJECTS, GazeConfig, LSTMConfig,
+from config import (CROSS_SUBJECT_SUBJECTS, GazeConfig, LSTMConfig, TemplateTrackingConfig,
                     get_frame_detection_config, get_gaze_config)
 from data.loaders import EyeDataset, EvEyeDataset
 from data.visualization import plot_gaze_predictions, plot_training_history
-from models.lstm import LSTMGazeEstimator, build_lstm_sequences
+from models.lstm import LSTMGazeEstimator, build_lstm_sequences, build_lstm_sequences_combined
 from pipeline.pipeline import (
-    build_valid_mask, noise_flagging_stage,
-    pupil_extraction_stage, relabeling_stage,
+    build_valid_mask, merge_frame_event_samples, noise_flagging_stage,
+    pupil_extraction_stage, relabeling_stage, template_tracking_stage,
 )
 from pipeline.runners import fov_filter_mask, errors_to_degrees
 
@@ -51,8 +51,14 @@ def _fov_rect(fov, fov_center):
 
 
 def load_subject_data(subject, data_dir, fov, fov_center,
-                      eye='left', dataset='ebveye', motion='saccadic'):
-    cache_path = os.path.join(CACHE_DIR, f'{dataset}_subject_{subject}_{eye}_lstm.npz')
+                      eye='left', dataset='ebveye', motion='saccadic', combined=False,
+                      relabel=False):
+    # Relabel only on saccadic ebveye when the flag is set; never on ev_eye (continuous
+    # Tobii labels make every frame look like a transition, which discards almost everything).
+    do_relabel = relabel and motion == 'saccadic' and dataset != 'ev_eye'
+    suffix = 'lstm_combined' if combined else 'lstm'
+    relabel_tag = 'rel1' if do_relabel else 'rel0'
+    cache_path = os.path.join(CACHE_DIR, f'{dataset}_subject_{subject}_{eye}_{suffix}_{relabel_tag}.npz')
     if os.path.exists(cache_path):
         print(f"  Subject {subject}: loading from cache")
         data = np.load(cache_path)
@@ -75,8 +81,11 @@ def load_subject_data(subject, data_dir, fov, fov_center,
 
     pupil_centers, ellipses, screen_coords = pupil_extraction_stage(eye_dataset, frame_config)
     blink_mask = noise_flagging_stage(pupil_centers)
-    sc, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
-    skip_label_changes = (dataset == 'ebveye')
+    if do_relabel:
+        sc, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
+    else:
+        sc, saccade_mask = screen_coords, None
+    skip_label_changes = (dataset == 'ebveye') and (motion == 'saccadic') and not do_relabel
     valid_mask = build_valid_mask(
         blink_mask, sc,
         skip_frames=gaze_config.saccade_skip_frames,
@@ -85,7 +94,15 @@ def load_subject_data(subject, data_dir, fov, fov_center,
         post_blink_skip_frames=gaze_config.post_blink_skip_frames,
     )
 
-    X, y = build_lstm_sequences(ellipses, sc, valid_mask, seq_len=lstm_config.seq_len)
+    if combined:
+        events_np = eye_dataset.load_events_sorted(eye if dataset == 'ev_eye' else None)
+        event_samples = template_tracking_stage(
+            events_np, eye_dataset.frame_list, ellipses, sc, valid_mask, TemplateTrackingConfig())
+        merged = merge_frame_event_samples(
+            ellipses, sc, valid_mask, eye_dataset.frame_list, event_samples)
+        X, y = build_lstm_sequences_combined(merged, seq_len=lstm_config.seq_len)
+    else:
+        X, y = build_lstm_sequences(ellipses, sc, valid_mask, seq_len=lstm_config.seq_len)
 
     if fov is not None:
         fov_mask = fov_filter_mask(y, fov[0], fov[1], gaze_config, center=fov_center)
@@ -102,16 +119,19 @@ def load_subject_data(subject, data_dir, fov, fov_center,
 
 
 def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
-             fine_tune=False, loss_plot=False, eye='left', dataset='ebveye', motion='saccadic'):
+             fine_tune=False, loss_plot=False, eye='left', dataset='ebveye', motion='saccadic',
+             combined=False, relabel=False):
     X_val, y_val = load_subject_data(val_subject, data_dir, fov, fov_center,
-                                     eye=eye, dataset=dataset, motion=motion)
+                                     eye=eye, dataset=dataset, motion=motion, combined=combined,
+                                     relabel=relabel)
 
     X_parts, y_parts = [], []
     for s in subjects:
         if s == val_subject:
             continue
         X_s, y_s = load_subject_data(s, data_dir, fov, fov_center,
-                                     eye=eye, dataset=dataset, motion=motion)
+                                     eye=eye, dataset=dataset, motion=motion, combined=combined,
+                                     relabel=relabel)
         X_parts.append(X_s)
         y_parts.append(y_s)
     X_train = np.concatenate(X_parts)
@@ -166,7 +186,8 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
 
 
 def main(data_dir, val_subject, ge_plots, fov, fov_center,
-         fine_tune=False, loss_plot=False, eye='left', dataset='ebveye', motion='saccadic'):
+         fine_tune=False, loss_plot=False, eye='left', dataset='ebveye', motion='saccadic',
+         combined=False, relabel=False):
     subjects = CROSS_SUBJECT_SUBJECTS[dataset]
 
     print("=" * 60)
@@ -174,7 +195,8 @@ def main(data_dir, val_subject, ge_plots, fov, fov_center,
     print("=" * 60)
     for s in subjects:
         load_subject_data(s, data_dir, fov, fov_center,
-                          eye=eye, dataset=dataset, motion=motion)
+                          eye=eye, dataset=dataset, motion=motion, combined=combined,
+                          relabel=relabel)
 
     if val_subject is not None:
         if val_subject not in subjects:
@@ -185,7 +207,7 @@ def main(data_dir, val_subject, ge_plots, fov, fov_center,
         print("=" * 60)
         run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
                  fine_tune=fine_tune, loss_plot=loss_plot,
-                 eye=eye, dataset=dataset, motion=motion)
+                 eye=eye, dataset=dataset, motion=motion, combined=combined, relabel=relabel)
         return
 
     results = {}
@@ -196,7 +218,8 @@ def main(data_dir, val_subject, ge_plots, fov, fov_center,
         print("=" * 60)
         results[s] = run_fold(s, subjects, data_dir, ge_plots, fov, fov_center,
                               fine_tune=fine_tune, loss_plot=loss_plot,
-                              eye=eye, dataset=dataset, motion=motion)
+                              eye=eye, dataset=dataset, motion=motion, combined=combined,
+                              relabel=relabel)
 
     print()
     print("=" * 60)
@@ -228,4 +251,6 @@ def run(opt):
     main(opt.data_dir, opt.val_subject, opt.ge_plots, fov, fov_center,
          fine_tune=getattr(opt, 'fine_tune', False),
          loss_plot=getattr(opt, 'loss_plot', False),
-         eye=opt.eye, dataset=dataset, motion=motion)
+         eye=opt.eye, dataset=dataset, motion=motion,
+         combined=getattr(opt, 'lstm_events', False),
+         relabel=getattr(opt, 'relabel', False))
