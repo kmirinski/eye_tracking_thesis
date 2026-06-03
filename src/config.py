@@ -91,6 +91,11 @@ class TemplateTrackingConfig:
     convergence: float = 0.01
     max_icp_iter: int = 50
     num_boundary: int = 360
+    # Event outlier filtering (Option B). Thresholds are ratios of gamma_bar (mean
+    # pupil-boundary radius) so they are scale-invariant across subjects/pupil sizes.
+    enable_filter: bool = True
+    max_residual_ratio: float = 0.15   # reject batch if mean points-to-edge residual > ratio * gamma_bar
+    max_drift_ratio: float = 2.0      # reject batch if |new_center - frame anchor| > ratio * gamma_bar
 
 @dataclass
 class KDEConfig:
@@ -100,7 +105,7 @@ class KDEConfig:
 
 @dataclass
 class GazeConfig:
-    poly_degrees: list = (5, 6, 7, 8, 12)
+    poly_degrees: list = (4, 5, 6, 7)
     train_ratio: float = 0.8
     val_ratio: float = 0.2
     fine_tune_ratio: float = 0.4         # fraction of held-out subject data used for fine-tuning/calibration

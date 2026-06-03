@@ -34,6 +34,8 @@ parser.add_argument('--event_diag', action='store_true',
                     help='plot event extraction diagnostic: ellipse centres over time + size distributions (requires --model lstm)')
 parser.add_argument('--loss_plot', action='store_true',
                     help='plot training vs validation loss curve after LSTM training')
+parser.add_argument('--no_event_filter', action='store_true',
+                    help='disable event outlier filtering (residual/blink/drift gates) in template tracking')
 
 
 # Relabeling options

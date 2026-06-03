@@ -211,6 +211,12 @@ def template_tracking_stage(events_np, frame_list, ellipses,
     candidate_buf = []
     current_frame_ptr = first_valid_idx
 
+    # Option B filtering state: anchor = last frame-detected center; in_blink = current
+    # frame has no detection (eyelid closed / detection failed).
+    anchor_center = center.copy()
+    in_blink = False
+    rej_blink = rej_residual = rej_drift = 0
+
     for i in range(start_ev, len(events_np)):
         polarity, row, col, ts = events_np[i]
 
@@ -225,7 +231,16 @@ def template_tracking_stage(events_np, frame_list, ellipses,
                 axes = template_ellipse[1]
                 angle = template_ellipse[2]
                 gamma_bar = np.mean(np.linalg.norm(boundary_Q - center, axis=1))
+                anchor_center = center.copy()
+                in_blink = False
                 candidate_buf = []
+            else:
+                in_blink = True   # failed detection / blink: template is stale
+
+        # Blink exclusion: don't track through a blink until the next valid frame re-anchors.
+        if config.enable_filter and in_blink:
+            candidate_buf = []
+            continue
 
         dist = np.sqrt((col - center[0]) ** 2 + (row - center[1]) ** 2)
         if config.lambda1 * gamma_bar < dist < config.lambda2 * gamma_bar:
@@ -235,11 +250,25 @@ def template_tracking_stage(events_np, frame_list, ellipses,
             continue
 
         pts = np.array([(c[0], c[1]) for c in candidate_buf], dtype=np.float64)
-        T = points_to_edge_matching(pts, boundary_Q,
-                                    max_iter=config.max_icp_iter,
-                                    convergence=config.convergence)
+        T, residual = points_to_edge_matching(pts, boundary_Q,
+                                              max_iter=config.max_icp_iter,
+                                              convergence=config.convergence)
 
-        center = center - T
+        if config.enable_filter:
+            # Residual gate (E-Gaze): candidate events must lie on the pupil ring.
+            if residual > config.max_residual_ratio * gamma_bar:
+                rej_residual += 1
+                candidate_buf = []
+                continue
+            # Drift bound (Angelopoulos): center can't wander far from the frame anchor.
+            new_center = center - T
+            if np.linalg.norm(new_center - anchor_center) > config.max_drift_ratio * gamma_bar:
+                rej_drift += 1
+                candidate_buf = []
+                continue
+            center = new_center
+        else:
+            center = center - T
         boundary_Q = boundary_Q - T
 
         t_last = candidate_buf[-1][2]
@@ -254,7 +283,11 @@ def template_tracking_stage(events_np, frame_list, ellipses,
 
         candidate_buf = []
 
-    print(f"Template tracking: {len(event_samples)} event samples extracted.")
+    if config.enable_filter:
+        print(f"Template tracking: {len(event_samples)} event samples extracted "
+              f"(rejected — residual: {rej_residual}, drift: {rej_drift}; blink batches skipped).")
+    else:
+        print(f"Template tracking: {len(event_samples)} event samples extracted (filtering off).")
     return event_samples
 
 
@@ -410,6 +443,7 @@ def run_pipeline(opt):
     events_np = eye_dataset.load_events_sorted(eye_key)
     with timer("Event extraction"):
         tt_config = TemplateTrackingConfig()
+        tt_config.enable_filter = not getattr(opt, 'no_event_filter', False)
         event_samples = template_tracking_stage(
             events_np, eye_dataset.frame_list,
             ellipses, screen_coords, valid_mask, tt_config,
