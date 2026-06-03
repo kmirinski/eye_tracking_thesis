@@ -739,6 +739,87 @@ def plot_event_ellipse_diagnostic(frame_list, ellipses, event_samples):
     plt.show()
 
 
+def plot_event_frame_deviation_hist(frame_list, ellipses, event_samples, reference_px=3.0):
+    """
+    Angelopoulos validation protocol for the event tracker.
+
+    For each frame that has a detected ellipse, take the LAST event-center estimate
+    produced in the inter-frame window just before that frame's timestamp and measure
+    its Euclidean deviation (px) from the frame's OWN detected pupil center. A correct
+    tracker yields a tight distribution (Angelopoulos: the center "almost never deviates
+    by more than 3 px"); the up/down spikes seen on the cy-over-time plot show up here as
+    a heavy tail — i.e. bad event batches, not a processing bug.
+
+    Plots a log-y histogram of the deviations with a reference line at `reference_px`
+    and a line at the median.
+    """
+    frame_list_chron = frame_list[::-1]
+    ellipses_chron   = ellipses[::-1]
+
+    # Frames with a valid detection (timestamp, cx, cy); blinks/failed detections are None.
+    frames = [
+        (frame.timestamp, ell[0][0], ell[0][1])
+        for frame, ell in zip(frame_list_chron, ellipses_chron)
+        if ell is not None
+    ]
+
+    # Event samples sorted by time (defensive; template tracker already emits in order).
+    events = sorted(event_samples, key=lambda s: s['timestamp'])
+    e_ts = [s['timestamp'] for s in events]
+
+    print("\n--- Event-vs-frame centre deviation (Angelopoulos protocol) ---")
+    if not frames or not events:
+        print("No frame ellipses or no event samples — nothing to compare.")
+        return
+
+    # Two-pointer walk: for each frame, the last event in (prev_frame_ts, frame_ts).
+    deviations = []
+    ev_ptr = 0
+    prev_frame_ts = float('-inf')
+    for f_ts, f_cx, f_cy in frames:
+        # advance to first event strictly after the previous frame
+        while ev_ptr < len(events) and e_ts[ev_ptr] <= prev_frame_ts:
+            ev_ptr += 1
+        # last event strictly before this frame
+        last = None
+        j = ev_ptr
+        while j < len(events) and e_ts[j] < f_ts:
+            last = events[j]
+            j += 1
+        if last is not None:
+            (e_cx, e_cy), _, _ = last['ellipse']
+            deviations.append(np.hypot(e_cx - f_cx, e_cy - f_cy))
+        prev_frame_ts = f_ts
+
+    if not deviations:
+        print("No event sample fell in any inter-frame window — nothing to compare.")
+        return
+
+    dev = np.array(deviations)
+    median = np.median(dev)
+    within = np.mean(dev <= reference_px) * 100.0
+    print(f"Compared frames : {len(dev)}")
+    print(f"Median deviation: {median:.2f} px")
+    print(f"Mean deviation  : {dev.mean():.2f} px")
+    print(f"Max deviation   : {dev.max():.2f} px")
+    print(f"Within {reference_px:.0f} px    : {within:.1f}%")
+
+    fig, ax = plt.subplots(figsize=(10, 5), dpi=150)
+    ax.hist(dev, bins=60, color='orange', alpha=0.7)
+    ax.set_yscale('log')
+    ax.axvline(reference_px, color='steelblue', linestyle='--',
+               label=f'{reference_px:.0f} px reference')
+    ax.axvline(median, color='red', linestyle='-',
+               label=f'median = {median:.2f} px')
+    ax.set_xlabel('event-vs-frame centre deviation (px)')
+    ax.set_ylabel('count (log)')
+    ax.set_title('Event tracker validation — last event before each frame vs frame detection')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_combined_pupil_trajectory(combined, title='Pupil trajectory — frames and events'):
     """
     Line plot of pupil cx and cy over time for a chronologically sorted combined

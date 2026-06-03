@@ -417,8 +417,10 @@ def run_pipeline(opt):
 
     if getattr(opt, 'event_diag', False):
         from data.visualization import (plot_event_ellipse_diagnostic,
-                                        plot_combined_pupil_trajectory)
+                                        plot_combined_pupil_trajectory,
+                                        plot_event_frame_deviation_hist)
         plot_event_ellipse_diagnostic(eye_dataset.frame_list, ellipses, event_samples)
+        plot_event_frame_deviation_hist(eye_dataset.frame_list, ellipses, event_samples)
         combined_diag = merge_frame_event_samples(
             ellipses, screen_coords, valid_mask, eye_dataset.frame_list, event_samples,
         )
