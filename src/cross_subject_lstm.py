@@ -28,10 +28,10 @@ from data.loaders import EyeDataset, EvEyeDataset
 from data.visualization import plot_gaze_predictions, plot_training_history
 from models.lstm import LSTMGazeEstimator, build_lstm_sequences, build_lstm_sequences_combined
 from pipeline.pipeline import (
-    build_valid_mask, merge_frame_event_samples, noise_flagging_stage,
+    build_valid_mask, label_events_from_tobii, merge_frame_event_samples, noise_flagging_stage,
     pupil_extraction_stage, relabeling_stage, template_tracking_stage,
 )
-from pipeline.runners import fov_filter_mask, errors_to_degrees
+from pipeline.runners import fov_filter_mask, errors_to_degrees, angular_dod
 
 CACHE_DIR  = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
@@ -58,7 +58,7 @@ def load_subject_data(subject, data_dir, fov, fov_center,
     do_relabel = relabel and motion == 'saccadic' and dataset != 'ev_eye'
     suffix = 'lstm_combined' if combined else 'lstm'
     relabel_tag = 'rel1' if do_relabel else 'rel0'
-    cache_path = os.path.join(CACHE_DIR, f'{dataset}_subject_{subject}_{eye}_{suffix}_{relabel_tag}.npz')
+    cache_path = os.path.join(CACHE_DIR, f'{dataset}_subject_{subject}_{eye}_{motion}_{suffix}_{relabel_tag}.npz')
     if os.path.exists(cache_path):
         print(f"  Subject {subject}: loading from cache")
         data = np.load(cache_path)
@@ -92,12 +92,16 @@ def load_subject_data(subject, data_dir, fov, fov_center,
         saccade_mask=saccade_mask,
         skip_label_changes=skip_label_changes,
         post_blink_skip_frames=gaze_config.post_blink_skip_frames,
+        alignment_gaps=getattr(eye_dataset, 'alignment_gaps', None),
+        max_alignment_gap_us=gaze_config.max_alignment_gap_us,
     )
 
     if combined:
         events_np = eye_dataset.load_events_sorted(eye if dataset == 'ev_eye' else None)
         event_samples = template_tracking_stage(
             events_np, eye_dataset.frame_list, ellipses, sc, valid_mask, TemplateTrackingConfig())
+        if getattr(eye_dataset, 'gaze_records', None) is not None:
+            event_samples = label_events_from_tobii(event_samples, eye_dataset.gaze_records)
         merged = merge_frame_event_samples(
             ellipses, sc, valid_mask, eye_dataset.frame_list, event_samples)
         X, y = build_lstm_sequences_combined(merged, seq_len=lstm_config.seq_len)
@@ -169,10 +173,14 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
         X_eval, y_eval = X_val, y_val
 
     metrics = estimator.evaluate(X_eval, y_eval)
+    dod_mean, dod_med = angular_dod(estimator.predict(X_eval), y_eval,
+                                    GazeConfig(), normalized=(dataset == 'ev_eye'))
+    metrics['dod_mean'] = dod_mean
+    metrics['dod_median'] = dod_med
     v_deg, h_deg = errors_to_degrees(metrics['mean_error_v'], metrics['mean_error_h'],
                                      GazeConfig(), normalized=(dataset == 'ev_eye'))
     print(f"Subject {val_subject} val — mse={metrics['mse']:.5f}px²  mean={metrics['mean_error']:.5f}px  "
-          f"rmse={metrics['rmse']:.5f}px  | h={h_deg:.2f}°  v={v_deg:.2f}°")
+          f"rmse={metrics['rmse']:.5f}px  | h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={dod_mean:.2f}°")
 
     if ge_plots:
         eval_pred = estimator.predict(X_eval)
@@ -227,20 +235,22 @@ def main(data_dir, val_subject, ge_plots, fov, fov_center,
     print("=" * 60)
     gaze_config = GazeConfig()
     normalized = (dataset == 'ev_eye')
-    h_degs, v_degs = [], []
+    h_degs, v_degs, dods = [], [], []
     for s in subjects:
         m = results[s]
         v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
                                          gaze_config, normalized=normalized)
         h_degs.append(h_deg)
         v_degs.append(v_deg)
+        dods.append(m['dod_mean'])
         print(f"  {s:>3}: mean={m['mean_error']:.5f}px  rmse={m['rmse']:.5f}px  "
               f"median={m['median_error']:.5f}px  std={m['std_error']:.5f}px  "
-              f"| h={h_deg:.2f}°  v={v_deg:.2f}°")
+              f"| h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={m['dod_mean']:.2f}°")
     mean_errors = [results[s]['mean_error'] for s in subjects]
     print(f"\nOverall mean error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
     print(f"Overall per-axis: horizontal {np.mean(h_degs):.2f} ± {np.std(h_degs):.2f}°  |  "
           f"vertical {np.mean(v_degs):.2f} ± {np.std(v_degs):.2f}°")
+    print(f"Overall DoD: {np.mean(dods):.2f} ± {np.std(dods):.2f}°")
 
 
 def run(opt):

@@ -130,7 +130,8 @@ def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relab
 
 
 def build_valid_mask(blink_mask, screen_coords, skip_frames,
-                     saccade_mask=None, skip_label_changes=True, post_blink_skip_frames=1):
+                     saccade_mask=None, skip_label_changes=True, post_blink_skip_frames=1,
+                     alignment_gaps=None, max_alignment_gap_us=None):
     n = len(screen_coords)
 
     # Work in chronological order (arrays are stored reversed)
@@ -169,10 +170,18 @@ def build_valid_mask(blink_mask, screen_coords, skip_frames,
     if saccade_mask is not None:
         valid &= ~saccade_mask[::-1]
 
+    # ev_eye: drop frames whose nearest Tobii sample is too far in time (bad label).
+    alignment_removed = 0
+    if alignment_gaps is not None and max_alignment_gap_us is not None:
+        gap_ok = alignment_gaps[::-1] <= max_alignment_gap_us
+        alignment_removed = int(np.sum(valid & ~gap_ok))
+        valid &= gap_ok
+
     basic_removed = np.sum(blink_mask_chron | post_blink_chron | np.all(screen_chron == 0, axis=1))
     removed_total = n - np.sum(valid)
     print(f"Frames removed (basic filter): {basic_removed}")
-    print(f"Frames removed (temporal skip): {removed_total - basic_removed}")
+    print(f"Frames removed (temporal skip): {removed_total - basic_removed - alignment_removed}")
+    print(f"Frames removed (alignment gap): {alignment_removed}")
     print(f"Frames removed (total): {removed_total} / {n}")
 
     # Return mask in the original (reversed) array order
@@ -288,6 +297,36 @@ def template_tracking_stage(events_np, frame_list, ellipses,
               f"(rejected — residual: {rej_residual}, drift: {rej_drift}; blink batches skipped).")
     else:
         print(f"Template tracking: {len(event_samples)} event samples extracted (filtering off).")
+    return event_samples
+
+
+def label_events_from_tobii(event_samples, gaze_records):
+    """
+    Assign each event sample the gaze label of its nearest Tobii sample in time, and
+    record the time gap. Replaces the coarse next-frame label set in template_tracking_stage.
+
+    gaze_records: (M, 3) array of [davis_us, x_norm(col), y_norm(row)] (from EvEyeDataset).
+    Mirrors the frame-to-Tobii nearest-neighbor matching in loaders.py. Mutates and returns
+    event_samples; each gains 'gap_us' and an updated 'screen_coord' = [row(y), col(x)].
+    """
+    if not event_samples or gaze_records is None or len(gaze_records) == 0:
+        return event_samples
+
+    ev_ts   = np.array([s['timestamp'] for s in event_samples], dtype=np.int64)
+    gaze_ts = gaze_records[:, 0].astype(np.int64)
+
+    idx      = np.clip(np.searchsorted(gaze_ts, ev_ts), 0, len(gaze_records) - 1)
+    prev_idx = np.maximum(idx - 1, 0)
+    best     = np.where(np.abs(gaze_ts[prev_idx] - ev_ts) <
+                        np.abs(gaze_ts[idx]      - ev_ts), prev_idx, idx)
+    gaps     = np.abs(gaze_ts[best] - ev_ts)
+
+    for s, gi, gap in zip(event_samples, best, gaps):
+        col = gaze_records[gi, 1]   # x_norm
+        row = gaze_records[gi, 2]   # y_norm
+        s['screen_coord'] = np.array([row, col], dtype=np.float64)
+        s['gap_us'] = int(gap)
+
     return event_samples
 
 
@@ -411,6 +450,8 @@ def run_pipeline(opt):
         saccade_mask=saccade_mask,
         skip_label_changes=skip_label_changes,
         post_blink_skip_frames=gaze_config.post_blink_skip_frames,
+        alignment_gaps=getattr(eye_dataset, 'alignment_gaps', None),
+        max_alignment_gap_us=gaze_config.max_alignment_gap_us,
     )
 
     if opt.relabel_diag and opt.relabel:
@@ -448,6 +489,10 @@ def run_pipeline(opt):
             events_np, eye_dataset.frame_list,
             ellipses, screen_coords, valid_mask, tt_config,
         )
+        # ev_eye: label each event by its nearest Tobii sample in time (instead of the
+        # coarse next-frame label) and attach the per-event alignment gap.
+        if getattr(eye_dataset, 'gaze_records', None) is not None:
+            event_samples = label_events_from_tobii(event_samples, eye_dataset.gaze_records)
 
     if getattr(opt, 'event_diag', False):
         from data.visualization import (plot_event_ellipse_diagnostic,
@@ -462,8 +507,10 @@ def run_pipeline(opt):
 
     with timer("Model training"):
         if opt.model == 'regressor':
+            frame_timestamps = np.array([f.timestamp for f in eye_dataset.frame_list],
+                                        dtype=np.int64)
             run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt,
-                          event_samples=event_samples)
+                          event_samples=event_samples, frame_timestamps=frame_timestamps)
         elif opt.model == 'lstm':
             combined = merge_frame_event_samples(
                 ellipses, screen_coords, valid_mask, eye_dataset.frame_list, event_samples,

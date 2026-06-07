@@ -29,12 +29,14 @@ from data.visualization import plot_gaze_predictions
 from models.polynomial import GazeEstimator
 from pipeline.pipeline import (
     build_valid_mask,
+    label_events_from_tobii,
     noise_flagging_stage,
     pupil_extraction_stage,
     relabeling_stage,
     template_tracking_stage,
 )
-from pipeline.runners import fov_filter_mask, _fov_rect, split_randomly, split_by_label, errors_to_degrees
+from pipeline.runners import (fov_filter_mask, _fov_rect, split_by_label, split_by_time_blocks,
+                              errors_to_degrees, angular_dod)
 from processing.normalization import compute_pupil_stats, normalize_pupils
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
@@ -55,7 +57,7 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
     if os.path.exists(cache_path):
         print(f"  Subject {subject}: loading from cache")
         data = np.load(cache_path)
-        return data['pupil_centers'], data['screen_coords']
+        return data['pupil_centers'], data['screen_coords'], data['timestamps']
 
     print(f"Subject {subject}: preprocessing...")
     frame_config = get_frame_detection_config(subject, eye, dataset=dataset)
@@ -86,6 +88,8 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
         saccade_mask=saccade_mask,
         skip_label_changes=skip_label_changes,
         post_blink_skip_frames=gaze_config.post_blink_skip_frames,
+        alignment_gaps=getattr(eye_dataset, 'alignment_gaps', None),
+        max_alignment_gap_us=gaze_config.max_alignment_gap_us,
     )
 
     events_np = eye_dataset.load_events_sorted(eye if dataset == 'ev_eye' else None)
@@ -93,30 +97,42 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
     event_samples = template_tracking_stage(
         events_np, eye_dataset.frame_list, ellipses, sc, valid_mask, tt_config,
     )
+    # ev_eye: label events by nearest Tobii sample in time (+ per-event alignment gap).
+    if getattr(eye_dataset, 'gaze_records', None) is not None:
+        event_samples = label_events_from_tobii(event_samples, eye_dataset.gaze_records)
 
+    frame_ts = np.array([f.timestamp for f in eye_dataset.frame_list], dtype=np.int64)
     pupil_centers = np.round(pupil_centers[valid_mask], 2)
     screen_coords = np.round(sc[valid_mask], 2)
+    timestamps = frame_ts[valid_mask]
 
     if event_samples:
         ev_centers = np.array([[s['ellipse'][0][0], s['ellipse'][0][1]]
                                for s in event_samples], dtype=np.float32)
         ev_labels = np.array([s['screen_coord'] for s in event_samples], dtype=np.float64)
+        ev_ts = np.array([s['timestamp'] for s in event_samples], dtype=np.int64)
         valid_ev = ~np.all(ev_labels == 0, axis=1)
+        if event_samples[0].get('gap_us') is not None:
+            ev_gaps = np.array([s.get('gap_us', 0) for s in event_samples])
+            valid_ev &= ev_gaps <= gaze_config.max_alignment_gap_us
         ev_centers = ev_centers[valid_ev]
         ev_labels = ev_labels[valid_ev]
         pupil_centers = np.vstack([pupil_centers, ev_centers])
         screen_coords = np.vstack([screen_coords, ev_labels])
+        timestamps = np.concatenate([timestamps, ev_ts[valid_ev]])
         print(f"  Added {valid_ev.sum()} event ellipses → total samples: {len(pupil_centers)}")
 
     if fov is not None:
         fov_mask = fov_filter_mask(screen_coords, fov[0], fov[1], gaze_config, center=fov_center)
         pupil_centers = pupil_centers[fov_mask]
         screen_coords = screen_coords[fov_mask]
+        timestamps = timestamps[fov_mask]
 
     os.makedirs(CACHE_DIR, exist_ok=True)
-    np.savez(cache_path, pupil_centers=pupil_centers, screen_coords=screen_coords)
+    np.savez(cache_path, pupil_centers=pupil_centers, screen_coords=screen_coords,
+             timestamps=timestamps)
     print(f"  Subject {subject}: {len(pupil_centers)} samples — cached to {cache_path}")
-    return pupil_centers, screen_coords
+    return pupil_centers, screen_coords, timestamps
 
 
 def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
@@ -134,12 +150,12 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
     # Compute per-subject normalization stats from raw pupils
     stats = {
         s: compute_pupil_stats(pupil_centers)
-        for s, (pupil_centers, _) in subject_data.items()
+        for s, (pupil_centers, _, _) in subject_data.items()
     }
 
     # Build training set: pool normalized pupils from all train subjects
     train_pupils, train_screens = [], []
-    for s, (pupil_centers, screen_coords) in subject_data.items():
+    for s, (pupil_centers, screen_coords, _) in subject_data.items():
         if s == val_subject:
             continue
         mean, std = stats[s]
@@ -150,17 +166,19 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
 
     # Validation set: normalize with val subject's own stats
     val_mean, val_std = stats[val_subject]
-    pupil_val, screen_val = subject_data[val_subject]
+    pupil_val, screen_val, ts_val = subject_data[val_subject]
     pupil_val = normalize_pupils(pupil_val, val_mean, val_std)
 
     if fine_tune:
         # Split the held-out subject: calibration portion is pooled into training,
-        # the remainder becomes the evaluation set. Reuse the same split helpers as
-        # run_regressor (random for ev_eye's continuous labels, per-label for ebveye).
+        # the remainder becomes the evaluation set. ev_eye uses a leakage-free
+        # chronological block split (calib/eval are temporally disjoint); ebveye groups
+        # by label.
         ft_ratio = gaze_config.fine_tune_ratio
         if dataset == 'ev_eye':
-            pupil_calib, pupil_eval, screen_calib, screen_eval = split_randomly(
-                pupil_val, screen_val, train_ratio=ft_ratio, val_ratio=1 - ft_ratio,
+            pupil_calib, pupil_eval, screen_calib, screen_eval = split_by_time_blocks(
+                pupil_val, screen_val, ts_val,
+                val_ratio=1 - ft_ratio, n_blocks=gaze_config.n_time_blocks,
             )
         else:
             pupil_calib, pupil_eval, screen_calib, screen_eval = split_by_label(
@@ -181,12 +199,16 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
         estimator = GazeEstimator(degree=deg)
         estimator.fit(pupil_train, screen_train)
         metrics = estimator.evaluate(pupil_eval, screen_eval)
+        dod_mean, dod_med = angular_dod(estimator.predict(pupil_eval), screen_eval,
+                                        gaze_config, normalized=(dataset == 'ev_eye'))
+        metrics['dod_mean'] = dod_mean
+        metrics['dod_median'] = dod_med
         results[deg] = metrics
         v_deg, h_deg = errors_to_degrees(metrics['mean_error_v'], metrics['mean_error_h'],
                                          gaze_config, normalized=(dataset == 'ev_eye'))
         print(f"  mse={metrics['mse']:.5f}px²  mean={metrics['mean_error']:.5f}px  "
               f"rmse={metrics['rmse']:.5f}px  median={metrics['median_error']:.5f}px")
-        print(f"    per-axis: h={h_deg:.2f}°  v={v_deg:.2f}°")
+        print(f"    per-axis: h={h_deg:.2f}°  v={v_deg:.2f}°  |  DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
 
         if ge_plots:
             val_pred = estimator.predict(pupil_eval)
@@ -249,18 +271,20 @@ def run(opt):
     print("=" * 60)
     gaze_config = GazeConfig()
     normalized = (dataset == 'ev_eye')
-    h_degs, v_degs = [], []
+    h_degs, v_degs, dods = [], [], []
     for s in subjects:
         m = all_results[s]
         v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
                                          gaze_config, normalized=normalized)
         h_degs.append(h_deg)
         v_degs.append(v_deg)
+        dods.append(m['dod_mean'])
         print(f"  {s:>3}: mean={m['mean_error']:.5f}px  rmse={m['rmse']:.5f}px  "
               f"median={m['median_error']:.5f}px  std={m['std_error']:.5f}px  "
-              f"| h={h_deg:.2f}°  v={v_deg:.2f}°")
+              f"| h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={m['dod_mean']:.2f}°")
     mean_errors = [all_results[s]['mean_error'] for s in subjects]
     print(f"\nOverall mean error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
     print(f"Overall per-axis: horizontal {np.mean(h_degs):.2f} ± {np.std(h_degs):.2f}°  |  "
           f"vertical {np.mean(v_degs):.2f} ± {np.std(v_degs):.2f}°")
+    print(f"Overall DoD: {np.mean(dods):.2f} ± {np.std(dods):.2f}°")
 

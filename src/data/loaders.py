@@ -157,6 +157,8 @@ class EvEyeDataset:
         self.frame_list = []
         self.event_list = None
         self.event_stack = []
+        self.alignment_gaps = None   # per-frame |frame_ts - nearest Tobii ts| (µs), storage order
+        self.gaze_records = None     # (M,3): davis_us, x_norm(col), y_norm(row)
 
     def _subject_name(self):
         return f'user{self.subject}'
@@ -278,6 +280,10 @@ class EvEyeDataset:
 
         # Storage order: newest first (reverse of chronological)
         self.frame_list = frame_list[::-1]
+        # Keep per-frame alignment gaps (storage order) and the raw Tobii records so the
+        # pipeline can drop badly-aligned frames and label event samples by nearest Tobii.
+        self.alignment_gaps = deltas_us[::-1]
+        self.gaze_records = gaze_records
 
         print('Loading Events...')
         self.event_list = self.load_event_data(eye)

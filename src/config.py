@@ -46,8 +46,8 @@ EV_EYE_FRAME_DETECTION_OVERRIDES: dict = {
     6: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 180, "extra_triangle_corners": ('lower_left', "upper_right"), "max_ellipse_area": 5000},
     7: {"morph_kernel_size": 2, "extra_triangle_corners": ('lower_left', 'upper_right'), "min_ellipse_area": 190},
     8: {"morph_kernel_size": 2, "triangle_size": 150, "extra_triangle_corners": ('lower_left', 'upper_right'), "min_ellipse_area": 140},
-    25: {"threshold": 30, "morph_kernel_size": 4, 'min_aspect_ratio': 0.38, "extra_triangle_corners": ('lower_left',)},
     22: {"morph_kernel_size": 2, "triangle_size": 200, "extra_triangle_corners": ('lower_left',)},
+    25: {"threshold": 30, "morph_kernel_size": 4, 'min_aspect_ratio': 0.38, "extra_triangle_corners": ('lower_left',)},
     29: {"threshold": 24, "morph_kernel_size": 2, "triangle_size": 200, "extra_triangle_corners": ('lower_left', 'upper_left'), "min_ellipse_area": 300}, # A bit sus
     30: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 120, "extra_triangle_corners": ('upper_left', 'upper_right')},
     31: {"threshold": 20, "morph_kernel_size": 2, "extra_triangle_corners": ('upper_left', 'lower_left')},
@@ -62,7 +62,6 @@ EV_EYE_FRAME_DETECTION_OVERRIDES: dict = {
     43: {},
     44: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 180, "extra_triangle_corners": ('lower_left',)},
 }
-
 
 def get_frame_detection_config(subject: int, eye: str, dataset: str = 'ebveye') -> FrameDetectionConfig:
     """Return a FrameDetectionConfig with defaults + per-subject overrides applied."""
@@ -114,6 +113,8 @@ class GazeConfig:
     relabel_max_frames: int = 20         # safety cap: never relabel more than this many frames per label change
     post_blink_skip_frames: int = 1      # valid frames to discard after each blink run
     post_saccade_stability_window: int = 6  # consecutive stable frames required before Phase C begins
+    max_alignment_gap_us: int = 10000    # ev_eye: drop frames/events whose nearest Tobii sample is >10ms away
+    n_time_blocks: int = 20              # ev_eye: contiguous time blocks for leakage-free calib/eval split
     screen_width_px: int = 1920
     screen_height_px: int = 1080
     screen_fov_x_deg: float = 96.0       # full horizontal FoV of the screen in degrees
@@ -139,7 +140,7 @@ def get_gaze_config(subject: int) -> GazeConfig:
 # (cross_subject_lstm.py) cross-subject runners.
 CROSS_SUBJECT_SUBJECTS: dict = {
     'ebveye': [4, 5, 6, 7, 11, 12, 15, 18, 19, 21, 22],
-    'ev_eye': [4, 5, 6, 7, 8, 33, 34, 35, 36, 44],
+    'ev_eye': [4, 5, 6, 7, 8, 22, 25, 29, 30, 31, 32, 33, 34, 35, 36, 44],
     # 'ev_eye': [33, 34, 35, 36, 44],
 }
 
