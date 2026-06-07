@@ -44,9 +44,18 @@ mkdir -p logs
 
 echo "=== Subject $VAL_SUBJECT | Motion $MOTION | fine_tune=$FINE_TUNE_IDX | combined=$COMBINED_IDX ==="
 
-python src/cross_subject_lstm.py \
+# Entry point is main.py: cross_subject_lstm has no __main__ block of its own.
+# Each job writes its own results/folds/*.csv (race-free, unique filename).
+python src/main.py \
+    --cross_subject \
+    --model lstm \
     --val_subject $VAL_SUBJECT \
     --dataset ev_eye \
     --eye left \
     --motion $MOTION \
     $EXTRA_ARGS
+
+# After the whole array finishes, merge the per-fold CSVs into results/summary.csv:
+#   python scripts/aggregate_results.py
+# (run on the login node, or submit with:
+#   sbatch --dependency=afterok:<arrayjobid> --wrap "python scripts/aggregate_results.py")

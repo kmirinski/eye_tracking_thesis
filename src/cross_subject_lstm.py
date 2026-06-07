@@ -32,6 +32,7 @@ from pipeline.pipeline import (
     pupil_extraction_stage, relabeling_stage, template_tracking_stage,
 )
 from pipeline.runners import fov_filter_mask, errors_to_degrees, angular_dod
+from results_io import fold_filename, metrics_row, save_fold
 
 CACHE_DIR  = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
@@ -152,9 +153,32 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
     if loss_plot:
         plot_training_history(estimator.history, title=f'LSTM training — val subject {val_subject}')
 
+    normalized = (dataset == 'ev_eye')
+    gaze_config = GazeConfig()
+    csv_rows = []
+
+    def _eval(X, y, phase):
+        """Evaluate, attach DoD, log a one-line summary, and build a CSV row."""
+        m = estimator.evaluate(X, y)
+        dod_mean, dod_med = angular_dod(estimator.predict(X), y, gaze_config, normalized=normalized)
+        m['dod_mean'] = dod_mean
+        m['dod_median'] = dod_med
+        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
+                                         gaze_config, normalized=normalized)
+        print(f"Subject {val_subject} {phase} — mse={m['mse']:.5f}px²  mean={m['mean_error']:.5f}px  "
+              f"rmse={m['rmse']:.5f}px  | h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={dod_mean:.2f}°")
+        row = {
+            'model': 'lstm', 'dataset': dataset, 'motion': motion, 'eye': eye,
+            'val_subject': val_subject, 'fine_tune': int(fine_tune), 'relabel': int(relabel),
+            'combined': int(combined), 'degree': '', 'phase': phase, 'n_eval': len(y),
+        }
+        row.update(metrics_row(m, gaze_config, normalized))
+        csv_rows.append(row)
+        return m
+
     if fine_tune:
         # Stratified sampling: take fine_tune_ratio fraction of each unique label's sequences
-        fine_tune_ratio = GazeConfig().fine_tune_ratio
+        fine_tune_ratio = gaze_config.fine_tune_ratio
         unique_labels = np.unique(y_val, axis=0)
         ft_indices = []
         for label in unique_labels:
@@ -166,21 +190,21 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
 
         X_ft,   y_ft   = X_val[ft_indices],  y_val[ft_indices]
         X_eval, y_eval = X_val[eval_indices], y_val[eval_indices]
+
+        # Baseline: zero-shot on the held-out eval split, before any fine-tuning.
+        _eval(X_eval, y_eval, 'baseline')
+
         print(f"Fine-tuning on {len(ft_indices)} sequences from subject {val_subject} "
               f"({len(unique_labels)} labels × ~{fine_tune_ratio*100:.0f}% each)...")
         estimator.fine_tune(X_ft, y_ft)
+        metrics = _eval(X_eval, y_eval, 'finetuned')
     else:
+        # No fine-tuning: zero-shot on the full validation subject.
         X_eval, y_eval = X_val, y_val
+        metrics = _eval(X_eval, y_eval, 'baseline')
 
-    metrics = estimator.evaluate(X_eval, y_eval)
-    dod_mean, dod_med = angular_dod(estimator.predict(X_eval), y_eval,
-                                    GazeConfig(), normalized=(dataset == 'ev_eye'))
-    metrics['dod_mean'] = dod_mean
-    metrics['dod_median'] = dod_med
-    v_deg, h_deg = errors_to_degrees(metrics['mean_error_v'], metrics['mean_error_h'],
-                                     GazeConfig(), normalized=(dataset == 'ev_eye'))
-    print(f"Subject {val_subject} val — mse={metrics['mse']:.5f}px²  mean={metrics['mean_error']:.5f}px  "
-          f"rmse={metrics['rmse']:.5f}px  | h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={dod_mean:.2f}°")
+    save_fold(csv_rows, fold_filename('lstm', dataset, motion, eye, val_subject,
+                                      fine_tune, combined=combined, relabel=relabel))
 
     if ge_plots:
         eval_pred = estimator.predict(X_eval)

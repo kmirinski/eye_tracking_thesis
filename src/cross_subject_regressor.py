@@ -38,6 +38,7 @@ from pipeline.pipeline import (
 from pipeline.runners import (fov_filter_mask, _fov_rect, split_by_label, split_by_time_blocks,
                               errors_to_degrees, angular_dod)
 from processing.normalization import compute_pupil_stats, normalize_pupils
+from results_io import fold_filename, metrics_row, save_fold
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
@@ -136,16 +137,20 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
 
 
 def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
-             fine_tune=False, dataset='ebveye'):
+             fine_tune=False, dataset='ebveye', motion='saccadic', eye='left', relabel=False):
     """
     Train on all subjects except val_subject, evaluate on val_subject.
     Per-subject z-score normalization is applied before pooling.
 
     When fine_tune is set, a fine_tune_ratio fraction of the held-out subject is
-    pooled into the training set (calibration) and the regressor is evaluated on the
-    remaining portion only.
+    used as calibration. For each polynomial degree both a ``baseline`` model
+    (trained on the other subjects only) and a ``finetuned`` model (calibration
+    pooled in) are evaluated on the *same* held-out eval split, so the
+    calibration gain is directly comparable. Without fine_tune, only a baseline
+    is evaluated, on the whole validation subject.
     """
     gaze_config = GazeConfig()
+    normalized = (dataset == 'ev_eye')
 
     # Compute per-subject normalization stats from raw pupils
     stats = {
@@ -184,8 +189,8 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
             pupil_calib, pupil_eval, screen_calib, screen_eval = split_by_label(
                 pupil_val, screen_val, val_ratio=1 - ft_ratio,
             )
-        pupil_train = np.concatenate([pupil_train, pupil_calib])
-        screen_train = np.concatenate([screen_train, screen_calib])
+        pupil_train_ft = np.concatenate([pupil_train, pupil_calib])
+        screen_train_ft = np.concatenate([screen_train, screen_calib])
         print(f"Fine-tuning: pooled {len(pupil_calib)} calibration frames from subject "
               f"{val_subject} (~{ft_ratio*100:.0f}%) into training")
     else:
@@ -193,30 +198,55 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
 
     print(f"Train: {len(pupil_train)} frames  |  Eval: {len(pupil_eval)} frames")
 
+    csv_rows = []
+
+    def _eval(estimator, phase, deg):
+        """Evaluate on the held-out eval split, attach DoD, log, build a CSV row."""
+        m = estimator.evaluate(pupil_eval, screen_eval)
+        dod_mean, dod_med = angular_dod(estimator.predict(pupil_eval), screen_eval,
+                                        gaze_config, normalized=normalized)
+        m['dod_mean'] = dod_mean
+        m['dod_median'] = dod_med
+        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
+                                         gaze_config, normalized=normalized)
+        print(f"  [{phase}] mse={m['mse']:.5f}px²  mean={m['mean_error']:.5f}px  "
+              f"rmse={m['rmse']:.5f}px  median={m['median_error']:.5f}px")
+        print(f"    per-axis: h={h_deg:.2f}°  v={v_deg:.2f}°  |  DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
+        row = {
+            'model': 'regressor', 'dataset': dataset, 'motion': motion, 'eye': eye,
+            'val_subject': val_subject, 'fine_tune': int(fine_tune), 'relabel': int(relabel),
+            'combined': '', 'degree': deg, 'phase': phase, 'n_eval': len(screen_eval),
+        }
+        row.update(metrics_row(m, gaze_config, normalized))
+        csv_rows.append(row)
+        return m
+
     results = {}
     for deg in gaze_config.poly_degrees:
         print(f"\n  --- Degree {deg} ---")
-        estimator = GazeEstimator(degree=deg)
-        estimator.fit(pupil_train, screen_train)
-        metrics = estimator.evaluate(pupil_eval, screen_eval)
-        dod_mean, dod_med = angular_dod(estimator.predict(pupil_eval), screen_eval,
-                                        gaze_config, normalized=(dataset == 'ev_eye'))
-        metrics['dod_mean'] = dod_mean
-        metrics['dod_median'] = dod_med
-        results[deg] = metrics
-        v_deg, h_deg = errors_to_degrees(metrics['mean_error_v'], metrics['mean_error_h'],
-                                         gaze_config, normalized=(dataset == 'ev_eye'))
-        print(f"  mse={metrics['mse']:.5f}px²  mean={metrics['mean_error']:.5f}px  "
-              f"rmse={metrics['rmse']:.5f}px  median={metrics['median_error']:.5f}px")
-        print(f"    per-axis: h={h_deg:.2f}°  v={v_deg:.2f}°  |  DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
+        baseline = GazeEstimator(degree=deg)
+        baseline.fit(pupil_train, screen_train)
+        base_metrics = _eval(baseline, 'baseline', deg)
+
+        if fine_tune:
+            finetuned = GazeEstimator(degree=deg)
+            finetuned.fit(pupil_train_ft, screen_train_ft)
+            results[deg] = _eval(finetuned, 'finetuned', deg)
+            best_estimator = finetuned
+        else:
+            results[deg] = base_metrics
+            best_estimator = baseline
 
         if ge_plots:
-            val_pred = estimator.predict(pupil_eval)
+            val_pred = best_estimator.predict(pupil_eval)
             plot_gaze_predictions(
                 val_pred, screen_eval,
                 title=f'Subject {val_subject} — Degree {deg}',
                 fov_rect=_fov_rect(fov, fov_center, gaze_config),
             )
+
+    save_fold(csv_rows, fold_filename('regressor', dataset, motion, eye, val_subject,
+                                      fine_tune, combined=False, relabel=relabel))
 
     best_deg = min(results, key=lambda d: results[d]['mean_error'])
     print(f"\n  Best degree: {best_deg}  (mean={results[best_deg]['mean_error']:.5f}px)")
@@ -250,7 +280,8 @@ def run(opt):
         print(f"Fold: val = subject {opt.val_subject}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
         run_fold(opt.val_subject, subject_data, opt.ge_plots, fov, fov_center,
-                 fine_tune=fine_tune, dataset=dataset)
+                 fine_tune=fine_tune, dataset=dataset, motion=motion, eye=opt.eye,
+                 relabel=opt.relabel)
         return
 
     # Full LOO
@@ -261,7 +292,8 @@ def run(opt):
         print(f"Fold: val = subject {s}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
         fold_results = run_fold(s, subject_data, opt.ge_plots, fov, fov_center,
-                                fine_tune=fine_tune, dataset=dataset)
+                                fine_tune=fine_tune, dataset=dataset, motion=motion,
+                                eye=opt.eye, relabel=opt.relabel)
         best_deg = min(fold_results, key=lambda d: fold_results[d]['mean_error'])
         all_results[s] = fold_results[best_deg]
 

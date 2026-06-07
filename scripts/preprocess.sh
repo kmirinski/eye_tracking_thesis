@@ -30,7 +30,11 @@ mkdir -p logs
 
 echo "=== Preprocessing: motion=$MOTION combined=$COMBINED_IDX ==="
 
-python src/cross_subject_lstm.py \
+# Entry point is main.py. Running one fold warms every subject's cache as a side
+# effect; the trained model here is discarded (the GPU array does the real runs).
+python src/main.py \
+    --cross_subject \
+    --model lstm \
     --val_subject 4 \
     --dataset ev_eye \
     --eye left \
