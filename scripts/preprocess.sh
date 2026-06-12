@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=eye_preprocess
 #SBATCH --output=logs/preprocess_%a.out
-#SBATCH --time=02:00:00
-#SBATCH --partition=thin
+#SBATCH --time=04:00:00
+#SBATCH --partition=rome
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=32G
 #SBATCH --array=0-3
 
@@ -30,12 +30,13 @@ mkdir -p logs
 
 echo "=== Preprocessing: motion=$MOTION combined=$COMBINED_IDX ==="
 
-# Entry point is main.py. Running one fold warms every subject's cache as a side
-# effect; the trained model here is discarded (the GPU array does the real runs).
+# Entry point is main.py. --preprocess_only warms every subject's cache for this
+# (motion x combined) combo and exits before training, so the GPU array can just
+# read caches. No --val_subject needed (it loads all subjects regardless).
 python src/main.py \
     --cross_subject \
     --model lstm \
-    --val_subject 4 \
+    --preprocess_only \
     --dataset ev_eye \
     --eye left \
     --motion $MOTION \

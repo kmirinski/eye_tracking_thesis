@@ -104,7 +104,7 @@ class KDEConfig:
 
 @dataclass
 class GazeConfig:
-    poly_degrees: list = (4, 5, 6, 7)
+    poly_degrees: list = (4, 5, 6)
     train_ratio: float = 0.8
     val_ratio: float = 0.2
     fine_tune_ratio: float = 0.4         # fraction of held-out subject data used for fine-tuning/calibration
@@ -140,7 +140,8 @@ def get_gaze_config(subject: int) -> GazeConfig:
 # (cross_subject_lstm.py) cross-subject runners.
 CROSS_SUBJECT_SUBJECTS: dict = {
     'ebveye': [4, 5, 6, 7, 11, 12, 15, 18, 19, 21, 22],
-    'ev_eye': [4, 5, 6, 7, 8, 22, 25, 29, 30, 31, 32, 33, 34, 35, 36, 44],
+    # 'ev_eye': [4, 5, 6, 7, 8, 22, 25, 29, 30, 31, 32, 33, 34, 35, 36, 44],
+    'ev_eye': [4, 5, 6, 7, 8, 22, 25, 29, 30, 31, 33, 34, 35, 36, 44],
     # 'ev_eye': [33, 34, 35, 36, 44],
 }
 
@@ -151,13 +152,13 @@ class LSTMConfig:
     lstm_units: int = 128
     dense_units: tuple = (64, 32, 16)
     l1_reg: float = 1e-4
-    epochs: int = 100
-    batch_size: int = 32
-    learning_rate: float = 2e-4
+    epochs: int = 150                       # cap only; EarlyStopping ends training earlier
+    batch_size: int = 256                   # sized for GPU throughput (was 32 for CPU)
+    learning_rate: float = 5e-4             # raised with batch size (fewer updates/epoch)
     lr_decay_rate: float = 0.98
     lr_decay_steps: int = 1000
-    early_stop_patience: int = 15           # epochs without val_loss improvement before stopping
+    early_stop_patience: int = 8            # val_loss bottoms ~epoch 2; 8 confirms minimum without wasting GPU
     fine_tune_lr: float = 2e-5              # 10× lower than initial LR
-    fine_tune_epochs: int = 150
-    fine_tune_batch_size: int = 32
+    fine_tune_epochs: int = 20              # FT loss plateaus by ~epoch 20; no val monitoring
+    fine_tune_batch_size: int = 64
     freeze_lstm: bool = True                # if True, freeze LSTM layer during fine-tuning

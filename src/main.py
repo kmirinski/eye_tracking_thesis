@@ -61,6 +61,8 @@ parser.add_argument('--fine_tune', action='store_true',
                     help='fine-tune the cross-subject LSTM on a small portion of the val subject\'s data')
 parser.add_argument('--lstm_events', action='store_true',
                     help='cross-subject LSTM: include event ellipses (frame+event) instead of frame-only')
+parser.add_argument('--preprocess_only', action='store_true',
+                    help='cross-subject: warm every subject cache, then exit before training (for cluster pre-warming)')
 
 
 if __name__ == '__main__':

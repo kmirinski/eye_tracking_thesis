@@ -38,7 +38,7 @@ from pipeline.pipeline import (
 from pipeline.runners import (fov_filter_mask, _fov_rect, split_by_label, split_by_time_blocks,
                               errors_to_degrees, angular_dod)
 from processing.normalization import compute_pupil_stats, normalize_pupils
-from results_io import fold_filename, metrics_row, save_fold
+from results_io import fold_filename, metrics_row, save_fold, save_accumulated
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
@@ -250,7 +250,7 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
 
     best_deg = min(results, key=lambda d: results[d]['mean_error'])
     print(f"\n  Best degree: {best_deg}  (mean={results[best_deg]['mean_error']:.5f}px)")
-    return results
+    return results, csv_rows
 
 
 def run(opt):
@@ -286,14 +286,16 @@ def run(opt):
 
     # Full LOO
     all_results = {}
+    accumulated_rows = []
     for s in subjects:
         print()
         print("=" * 60)
         print(f"Fold: val = subject {s}" + (" (with fine-tuning)" if fine_tune else ""))
         print("=" * 60)
-        fold_results = run_fold(s, subject_data, opt.ge_plots, fov, fov_center,
-                                fine_tune=fine_tune, dataset=dataset, motion=motion,
-                                eye=opt.eye, relabel=opt.relabel)
+        fold_results, fold_rows = run_fold(s, subject_data, opt.ge_plots, fov, fov_center,
+                                           fine_tune=fine_tune, dataset=dataset, motion=motion,
+                                           eye=opt.eye, relabel=opt.relabel)
+        accumulated_rows.extend(fold_rows)
         best_deg = min(fold_results, key=lambda d: fold_results[d]['mean_error'])
         all_results[s] = fold_results[best_deg]
 
@@ -319,4 +321,13 @@ def run(opt):
     print(f"Overall per-axis: horizontal {np.mean(h_degs):.2f} ± {np.std(h_degs):.2f}°  |  "
           f"vertical {np.mean(v_degs):.2f} ± {np.std(v_degs):.2f}°")
     print(f"Overall DoD: {np.mean(dods):.2f} ± {np.std(dods):.2f}°")
+
+    # Accumulate every fold of this LOO run into one self-contained CSV at the
+    # results root (separate from the aggregator's summary.csv).
+    ft = 'ft1' if fine_tune else 'ft0'
+    rel = 'rel1' if opt.relabel else 'rel0'
+    save_accumulated(
+        accumulated_rows,
+        f'regressor_{dataset}_{motion}_{opt.eye}_loo_{ft}_{rel}.csv',
+    )
 

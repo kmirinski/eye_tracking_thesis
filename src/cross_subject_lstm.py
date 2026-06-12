@@ -176,18 +176,26 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
         csv_rows.append(row)
         return m
 
+    ft_indices = np.array([], dtype=int)
     if fine_tune:
-        # Stratified sampling: take fine_tune_ratio fraction of each unique label's sequences
+        # Stratified sampling: take fine_tune_ratio fraction of each unique label's sequences.
+        # Always leave >=1 sequence per label for eval. Frame-only subjects are sparse — many
+        # labels have a single sequence, which would otherwise empty the eval split and crash
+        # predict() on a zero-length array.
         fine_tune_ratio = gaze_config.fine_tune_ratio
         unique_labels = np.unique(y_val, axis=0)
-        ft_indices = []
+        ft_list = []
         for label in unique_labels:
             label_idx = np.where(np.all(y_val == label, axis=1))[0]
+            if len(label_idx) < 2:
+                continue  # too few to split; keep this label entirely for eval
             n_sample = max(1, int(len(label_idx) * fine_tune_ratio))
-            ft_indices.extend(np.random.choice(label_idx, n_sample, replace=False))
-        ft_indices = np.array(ft_indices)
+            n_sample = min(n_sample, len(label_idx) - 1)  # always retain >=1 for eval
+            ft_list.extend(np.random.choice(label_idx, n_sample, replace=False))
+        ft_indices = np.array(ft_list, dtype=int)
         eval_indices = np.setdiff1d(np.arange(len(X_val)), ft_indices)
 
+    if fine_tune and len(ft_indices) > 0:
         X_ft,   y_ft   = X_val[ft_indices],  y_val[ft_indices]
         X_eval, y_eval = X_val[eval_indices], y_val[eval_indices]
 
@@ -199,7 +207,10 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
         estimator.fine_tune(X_ft, y_ft)
         metrics = _eval(X_eval, y_eval, 'finetuned')
     else:
-        # No fine-tuning: zero-shot on the full validation subject.
+        # No fine-tuning (or too sparse to split): zero-shot on the full validation subject.
+        if fine_tune:
+            print(f"Subject {val_subject}: too few sequences per label to fine-tune "
+                  f"(no label has >=2); recording baseline on the full val set only.")
         X_eval, y_eval = X_val, y_val
         metrics = _eval(X_eval, y_eval, 'baseline')
 
@@ -219,7 +230,7 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
 
 def main(data_dir, val_subject, ge_plots, fov, fov_center,
          fine_tune=False, loss_plot=False, eye='left', dataset='ebveye', motion='saccadic',
-         combined=False, relabel=False):
+         combined=False, relabel=False, preprocess_only=False):
     subjects = CROSS_SUBJECT_SUBJECTS[dataset]
 
     print("=" * 60)
@@ -229,6 +240,10 @@ def main(data_dir, val_subject, ge_plots, fov, fov_center,
         load_subject_data(s, data_dir, fov, fov_center,
                           eye=eye, dataset=dataset, motion=motion, combined=combined,
                           relabel=relabel)
+
+    if preprocess_only:
+        print(f"\nPreprocess-only: warmed {len(subjects)} subject caches; exiting before training.")
+        return
 
     if val_subject is not None:
         if val_subject not in subjects:
@@ -287,4 +302,5 @@ def run(opt):
          loss_plot=getattr(opt, 'loss_plot', False),
          eye=opt.eye, dataset=dataset, motion=motion,
          combined=getattr(opt, 'lstm_events', False),
-         relabel=getattr(opt, 'relabel', False))
+         relabel=getattr(opt, 'relabel', False),
+         preprocess_only=getattr(opt, 'preprocess_only', False))

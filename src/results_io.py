@@ -64,6 +64,24 @@ def fold_filename(model, dataset, motion, eye, val_subject,
     return f'{model}_{dataset}_{motion}_{eye}_sub{val_subject}_{ft}_{comb}_{rel}.csv'
 
 
+def save_accumulated(rows, filename):
+    """Write all rows of a full leave-one-out run to ``results/<filename>``.
+
+    Unlike :func:`save_fold` (one file per fold under ``folds/``), this writes a
+    single CSV at the results root holding every fold of one LOO run, so the
+    sweep is self-contained in one file without re-running the aggregator.
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    path = os.path.join(RESULTS_DIR, filename)
+    with open(path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction='ignore')
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row.get(k, '') for k in FIELDNAMES})
+    print(f"Saved accumulated LOO results -> {path} ({len(rows)} rows)")
+    return path
+
+
 def save_fold(rows, filename):
     """Write ``rows`` (list of dicts) to ``results/folds/<filename>``.
 

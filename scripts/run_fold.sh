@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=eye_lstm_ev
 #SBATCH --output=logs/fold_%a.out
-#SBATCH --time=04:00:00
-#SBATCH --partition=gpu
+#SBATCH --time=00:30:00
+#SBATCH --partition=gpu_a100
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
 #SBATCH --gpus=1
 #SBATCH --array=0-127
 
