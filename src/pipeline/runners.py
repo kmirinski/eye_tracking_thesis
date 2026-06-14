@@ -252,6 +252,111 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
                                   fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))
 
 
+def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_config, opt,
+                              event_samples=None, frame_timestamps=None):
+    """Calibrate the polynomial on frame pupil centers, then evaluate gaze on the
+    high-frequency event-tracked centers — EV-Eye's high-frequency gaze protocol.
+
+    The gaze model is unchanged: one polynomial maps a pupil center to a screen point.
+    The only difference from run_regressor is *what feeds it*. We fit on frame centers
+    (clean, 25 Hz) and then score the fitted polynomial on the event-derived centers
+    (noisy, high-frequency) — which is how events contribute to gaze: they supply extra
+    pupil centers between frames, not a separate model.
+
+    A leakage-free temporal block split keeps calibration and evaluation disjoint in time:
+    time blocks are assigned to calibration vs. evaluation; frames in calibration blocks fit
+    the polynomial, while both events and frames in the evaluation blocks are scored with it.
+    Reporting the frame-eval and event-eval DoD side by side isolates the accuracy cost of
+    using the event stream vs. the frame stream under one shared calibration.
+    """
+    dataset = getattr(opt, 'dataset', 'ebveye')
+    normalized = dataset == 'ev_eye'
+
+    if not event_samples:
+        print("events_eval: no event samples available — nothing to evaluate "
+              "(did you also pass --frame_only?).")
+        return
+
+    # Frame samples — the calibration source.
+    frame_pupils = np.round(pupil_centers[valid_mask], 2)
+    frame_screens = np.round(screen_coords[valid_mask], 2)
+    frame_ts = np.asarray(frame_timestamps, dtype=np.int64)[valid_mask]
+
+    # Event samples — the high-frequency evaluation source. Drop zero-coord (transition)
+    # labels and, for ev_eye, events whose nearest Tobii sample is too far in time.
+    ev_centers = np.array([[s['ellipse'][0][0], s['ellipse'][0][1]] for s in event_samples],
+                          dtype=np.float64)
+    ev_labels = np.array([s['screen_coord'] for s in event_samples], dtype=np.float64)
+    ev_ts = np.array([s['timestamp'] for s in event_samples], dtype=np.int64)
+    valid_ev = ~np.all(ev_labels == 0, axis=1)
+    if event_samples[0].get('gap_us') is not None:
+        ev_gaps = np.array([s.get('gap_us', 0) for s in event_samples])
+        valid_ev &= ev_gaps <= gaze_config.max_alignment_gap_us
+    ev_centers, ev_labels, ev_ts = ev_centers[valid_ev], ev_labels[valid_ev], ev_ts[valid_ev]
+
+    if opt.fov is not None:
+        fov_w, fov_h = opt.fov
+        fm = fov_filter_mask(frame_screens, fov_w, fov_h, gaze_config, center=opt.fov_center)
+        frame_pupils, frame_screens, frame_ts = frame_pupils[fm], frame_screens[fm], frame_ts[fm]
+        em = fov_filter_mask(ev_labels, fov_w, fov_h, gaze_config, center=opt.fov_center)
+        ev_centers, ev_labels, ev_ts = ev_centers[em], ev_labels[em], ev_ts[em]
+
+    # Leakage-free temporal block split, shared between the two streams so calibration
+    # frames and evaluation events never fall in the same block (hence never overlap in time).
+    n_blocks = gaze_config.n_time_blocks
+    t0 = int(min(frame_ts.min(), ev_ts.min()))
+    t1 = int(max(frame_ts.max(), ev_ts.max()))
+    span = max(t1 - t0, 1)
+
+    def block_ids(ts):
+        return np.clip(((ts - t0) / span * n_blocks).astype(int), 0, n_blocks - 1)
+
+    n_val_blocks = max(1, min(n_blocks - 1, round(n_blocks * gaze_config.val_ratio)))
+    val_blocks = np.linspace(0, n_blocks - 1, n_val_blocks).round().astype(int)
+
+    frame_train = ~np.isin(block_ids(frame_ts), val_blocks)
+    frame_eval = np.isin(block_ids(frame_ts), val_blocks)
+    ev_eval = np.isin(block_ids(ev_ts), val_blocks)
+
+    if frame_train.sum() == 0 or ev_eval.sum() == 0:
+        print("events_eval: empty calibration or event-eval split — aborting.")
+        return
+
+    # Normalize every stream with the calibration-frame stats (one shared input space).
+    mean, std = compute_pupil_stats(frame_pupils[frame_train])
+    ftrain = normalize_pupils(frame_pupils[frame_train], mean, std)
+    feval = normalize_pupils(frame_pupils[frame_eval], mean, std)
+    eveval = normalize_pupils(ev_centers[ev_eval], mean, std)
+    ftrain_y, feval_y, eveval_y = (frame_screens[frame_train], frame_screens[frame_eval],
+                                   ev_labels[ev_eval])
+
+    # Effective event update rate over the eval blocks (instantaneous, from median spacing).
+    rate_str = ""
+    ev_ts_eval = np.sort(ev_ts[ev_eval])
+    if len(ev_ts_eval) > 1:
+        med_dt_us = float(np.median(np.diff(ev_ts_eval)))
+        if med_dt_us > 0:
+            rate_str = f"  (median spacing {med_dt_us / 1000:.2f} ms ≈ {1e6 / med_dt_us:.0f} Hz)"
+    print(f"Calibration frames: {len(ftrain)}  |  eval frames: {len(feval)}  |  "
+          f"eval events: {len(eveval)}{rate_str}")
+
+    clip_bounds = gaze_clip_bounds(gaze_config, normalized)
+    for deg in gaze_config.poly_degrees:
+        print(f"\n--- Degree {deg} ---")
+        estimator = GazeEstimator(degree=deg, clip_bounds=clip_bounds)
+        estimator.fit(ftrain, ftrain_y)
+
+        f_mean, f_med = angular_dod(estimator.predict(feval), feval_y, gaze_config, normalized)
+        e_mean, e_med = angular_dod(estimator.predict(eveval), eveval_y, gaze_config, normalized)
+        print(f"  frames    (25 Hz): DoD mean={f_mean:.2f}°  median={f_med:.2f}°  (n={len(feval)})")
+        print(f"  events (hi-freq) : DoD mean={e_mean:.2f}°  median={e_med:.2f}°  (n={len(eveval)})")
+
+        if opt.ge_plots:
+            plot_gaze_predictions(estimator.predict(eveval), eveval_y,
+                                  title=f'Events eval — Degree {deg}',
+                                  fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))
+
+
 def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     lstm_config = LSTMConfig()
 

@@ -19,6 +19,9 @@ parser.add_argument('--model', default="regressor", choices=['regressor', 'lstm'
                     help='choose model type to estimate gaze')
 parser.add_argument('--frame_only', action='store_true',
                     help='regressor: train/eval on frame pupil detections only, excluding event ellipses')
+parser.add_argument('--events_eval', action='store_true',
+                    help='regressor: calibrate on frame centers, then evaluate gaze DoD on the '
+                         'high-frequency event-tracked centers (high-frequency gaze protocol)')
 
 
 # Debug/Inspect options

@@ -5,7 +5,8 @@ from utils import timer
 from data.loaders import EyeDataset, EvEyeDataset
 from processing.frame_detection import extract_pupil_centers
 from config import FrameDetectionConfig, get_frame_detection_config, GazeConfig, get_gaze_config, TemplateTrackingConfig
-from pipeline.runners import run_regressor, run_lstm, run_lstm_combined
+from pipeline.runners import (run_regressor, run_regressor_events_eval, run_lstm,
+                              run_lstm_combined)
 from tracking import sample_ellipse_boundary, points_to_edge_matching
 
 
@@ -484,7 +485,8 @@ def run_pipeline(opt):
     # Event ellipses are only needed for the LSTM, the event diagnostics, or a regressor
     # run that includes events. Skip the (slow) extraction for a frame-only regressor.
     skip_events = (getattr(opt, 'frame_only', False) and opt.model == 'regressor'
-                   and not getattr(opt, 'event_diag', False))
+                   and not getattr(opt, 'event_diag', False)
+                   and not getattr(opt, 'events_eval', False))
     if skip_events:
         event_samples = []
         print("Frame-only mode: skipping event extraction.")
@@ -517,9 +519,14 @@ def run_pipeline(opt):
         if opt.model == 'regressor':
             frame_timestamps = np.array([f.timestamp for f in eye_dataset.frame_list],
                                         dtype=np.int64)
-            reg_event_samples = None if getattr(opt, 'frame_only', False) else event_samples
-            run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt,
-                          event_samples=reg_event_samples, frame_timestamps=frame_timestamps)
+            if getattr(opt, 'events_eval', False):
+                run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_config,
+                                          opt, event_samples=event_samples,
+                                          frame_timestamps=frame_timestamps)
+            else:
+                reg_event_samples = None if getattr(opt, 'frame_only', False) else event_samples
+                run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt,
+                              event_samples=reg_event_samples, frame_timestamps=frame_timestamps)
         elif opt.model == 'lstm':
             combined = merge_frame_event_samples(
                 ellipses, screen_coords, valid_mask, eye_dataset.frame_list, event_samples,
