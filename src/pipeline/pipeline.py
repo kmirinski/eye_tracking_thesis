@@ -481,18 +481,26 @@ def run_pipeline(opt):
     if opt.diff_plot:
         plot_pupil_diffs(pupil_centers, screen_coords)
 
-    events_np = eye_dataset.load_events_sorted(eye_key)
-    with timer("Event extraction"):
-        tt_config = TemplateTrackingConfig()
-        tt_config.enable_filter = not getattr(opt, 'no_event_filter', False)
-        event_samples = template_tracking_stage(
-            events_np, eye_dataset.frame_list,
-            ellipses, screen_coords, valid_mask, tt_config,
-        )
-        # ev_eye: label each event by its nearest Tobii sample in time (instead of the
-        # coarse next-frame label) and attach the per-event alignment gap.
-        if getattr(eye_dataset, 'gaze_records', None) is not None:
-            event_samples = label_events_from_tobii(event_samples, eye_dataset.gaze_records)
+    # Event ellipses are only needed for the LSTM, the event diagnostics, or a regressor
+    # run that includes events. Skip the (slow) extraction for a frame-only regressor.
+    skip_events = (getattr(opt, 'frame_only', False) and opt.model == 'regressor'
+                   and not getattr(opt, 'event_diag', False))
+    if skip_events:
+        event_samples = []
+        print("Frame-only mode: skipping event extraction.")
+    else:
+        events_np = eye_dataset.load_events_sorted(eye_key)
+        with timer("Event extraction"):
+            tt_config = TemplateTrackingConfig()
+            tt_config.enable_filter = not getattr(opt, 'no_event_filter', False)
+            event_samples = template_tracking_stage(
+                events_np, eye_dataset.frame_list,
+                ellipses, screen_coords, valid_mask, tt_config,
+            )
+            # ev_eye: label each event by its nearest Tobii sample in time (instead of the
+            # coarse next-frame label) and attach the per-event alignment gap.
+            if getattr(eye_dataset, 'gaze_records', None) is not None:
+                event_samples = label_events_from_tobii(event_samples, eye_dataset.gaze_records)
 
     if getattr(opt, 'event_diag', False):
         from data.visualization import (plot_event_ellipse_diagnostic,
@@ -509,8 +517,9 @@ def run_pipeline(opt):
         if opt.model == 'regressor':
             frame_timestamps = np.array([f.timestamp for f in eye_dataset.frame_list],
                                         dtype=np.int64)
+            reg_event_samples = None if getattr(opt, 'frame_only', False) else event_samples
             run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config, opt,
-                          event_samples=event_samples, frame_timestamps=frame_timestamps)
+                          event_samples=reg_event_samples, frame_timestamps=frame_timestamps)
         elif opt.model == 'lstm':
             combined = merge_frame_event_samples(
                 ellipses, screen_coords, valid_mask, eye_dataset.frame_list, event_samples,

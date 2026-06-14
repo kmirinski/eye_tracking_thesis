@@ -7,6 +7,21 @@ from config import GazeConfig, LSTMConfig
 from processing.normalization import compute_pupil_stats, normalize_pupils
 
 
+def gaze_clip_bounds(gaze_config, normalized):
+    """Per-axis (lo, hi) bounds for valid gaze labels, in the same units as the labels.
+
+    Column 0 = vertical (row), column 1 = horizontal (col). ev_eye labels are normalized
+    to [0,1]; ebveye labels are screen pixels. Used to clip regressor predictions so
+    polynomial extrapolation can't produce off-screen outliers.
+    """
+    lo = np.array([0.0, 0.0])
+    if normalized:
+        hi = np.array([1.0, 1.0])
+    else:
+        hi = np.array([float(gaze_config.screen_height_px), float(gaze_config.screen_width_px)])
+    return lo, hi
+
+
 def errors_to_degrees(err_v, err_h, gaze_config, normalized):
     """Convert per-axis label-unit errors to degrees of visual angle.
 
@@ -215,9 +230,10 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
     print(f"Validation set size: {len(pupil_val)}")
 
     normalized = dataset == 'ev_eye'
+    clip_bounds = gaze_clip_bounds(gaze_config, normalized)
     for deg in gaze_config.poly_degrees:
         print(f"\n--- Degree {deg} ---")
-        gaze_estimator = GazeEstimator(degree=deg)
+        gaze_estimator = GazeEstimator(degree=deg, clip_bounds=clip_bounds)
         gaze_estimator.fit(pupil_train, screen_train)
 
         eval_pupil, eval_screen = pupil_val, screen_val

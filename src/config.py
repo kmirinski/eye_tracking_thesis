@@ -44,7 +44,7 @@ EV_EYE_FRAME_DETECTION_OVERRIDES: dict = {
     4:  {"extra_triangle_corners": ('lower_left', 'upper_left')},
     5: {"threshold": 20, "morph_kernel_size": 2, "extra_triangle_corners": ('lower_left', 'upper_left')},
     6: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 180, "extra_triangle_corners": ('lower_left', "upper_right"), "max_ellipse_area": 5000},
-    7: {"morph_kernel_size": 2, "extra_triangle_corners": ('lower_left', 'upper_right'), "min_ellipse_area": 190},
+    7: {"morph_kernel_size": 2, "extra_triangle_corners": ('lower_left', 'upper_right', 'lower_right'), "min_ellipse_area": 190},
     8: {"morph_kernel_size": 2, "triangle_size": 150, "extra_triangle_corners": ('lower_left', 'upper_right'), "min_ellipse_area": 140},
     22: {"morph_kernel_size": 2, "triangle_size": 200, "extra_triangle_corners": ('lower_left',)},
     25: {"threshold": 30, "morph_kernel_size": 4, 'min_aspect_ratio': 0.38, "extra_triangle_corners": ('lower_left',)},
@@ -104,7 +104,7 @@ class KDEConfig:
 
 @dataclass
 class GazeConfig:
-    poly_degrees: list = (4, 5, 6)
+    poly_degrees: list = (1, 2, 3, 4, 5, 6, 8, 12)
     train_ratio: float = 0.8
     val_ratio: float = 0.2
     fine_tune_ratio: float = 0.4         # fraction of held-out subject data used for fine-tuning/calibration

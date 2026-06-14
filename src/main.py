@@ -17,6 +17,8 @@ parser.add_argument('--motion', default='saccadic', choices=['saccadic', 'pursui
                     help='motion type to load: saccadic or smooth pursuit')
 parser.add_argument('--model', default="regressor", choices=['regressor', 'lstm'],
                     help='choose model type to estimate gaze')
+parser.add_argument('--frame_only', action='store_true',
+                    help='regressor: train/eval on frame pupil detections only, excluding event ellipses')
 
 
 # Debug/Inspect options

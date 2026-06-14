@@ -36,7 +36,7 @@ from pipeline.pipeline import (
     template_tracking_stage,
 )
 from pipeline.runners import (fov_filter_mask, _fov_rect, split_by_label, split_by_time_blocks,
-                              errors_to_degrees, angular_dod)
+                              errors_to_degrees, angular_dod, gaze_clip_bounds)
 from processing.normalization import compute_pupil_stats, normalize_pupils
 from results_io import fold_filename, metrics_row, save_fold, save_accumulated
 
@@ -45,16 +45,17 @@ CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
 
 
 def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
-                      dataset='ebveye', motion='saccadic'):
+                      dataset='ebveye', motion='saccadic', frame_only=False):
     """
     Run the full preprocessing pipeline for one subject and return filtered
     raw (unnormalized) pupil_centers and screen_coords.
 
     Results are cached to CACHE_DIR so subsequent runs skip re-extraction.
-    The cache key includes dataset and relabel since they affect output.
+    The cache key includes dataset, relabel and frame_only since they affect output.
     """
     relabel_tag = 'rel1' if relabel else 'rel0'
-    cache_path = os.path.join(CACHE_DIR, f'{dataset}_subject_{subject}_{eye}_regressor_{relabel_tag}.npz')
+    fo_tag = '_frameonly' if frame_only else ''
+    cache_path = os.path.join(CACHE_DIR, f'{dataset}_subject_{subject}_{eye}_regressor_{relabel_tag}{fo_tag}.npz')
     if os.path.exists(cache_path):
         print(f"  Subject {subject}: loading from cache")
         data = np.load(cache_path)
@@ -93,14 +94,18 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
         max_alignment_gap_us=gaze_config.max_alignment_gap_us,
     )
 
-    events_np = eye_dataset.load_events_sorted(eye if dataset == 'ev_eye' else None)
-    tt_config = TemplateTrackingConfig()
-    event_samples = template_tracking_stage(
-        events_np, eye_dataset.frame_list, ellipses, sc, valid_mask, tt_config,
-    )
-    # ev_eye: label events by nearest Tobii sample in time (+ per-event alignment gap).
-    if getattr(eye_dataset, 'gaze_records', None) is not None:
-        event_samples = label_events_from_tobii(event_samples, eye_dataset.gaze_records)
+    if frame_only:
+        event_samples = []
+        print("  Frame-only mode: skipping event extraction.")
+    else:
+        events_np = eye_dataset.load_events_sorted(eye if dataset == 'ev_eye' else None)
+        tt_config = TemplateTrackingConfig()
+        event_samples = template_tracking_stage(
+            events_np, eye_dataset.frame_list, ellipses, sc, valid_mask, tt_config,
+        )
+        # ev_eye: label events by nearest Tobii sample in time (+ per-event alignment gap).
+        if getattr(eye_dataset, 'gaze_records', None) is not None:
+            event_samples = label_events_from_tobii(event_samples, eye_dataset.gaze_records)
 
     frame_ts = np.array([f.timestamp for f in eye_dataset.frame_list], dtype=np.int64)
     pupil_centers = np.round(pupil_centers[valid_mask], 2)
@@ -221,15 +226,16 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
         csv_rows.append(row)
         return m
 
+    clip_bounds = gaze_clip_bounds(gaze_config, normalized)
     results = {}
     for deg in gaze_config.poly_degrees:
         print(f"\n  --- Degree {deg} ---")
-        baseline = GazeEstimator(degree=deg)
+        baseline = GazeEstimator(degree=deg, clip_bounds=clip_bounds)
         baseline.fit(pupil_train, screen_train)
         base_metrics = _eval(baseline, 'baseline', deg)
 
         if fine_tune:
-            finetuned = GazeEstimator(degree=deg)
+            finetuned = GazeEstimator(degree=deg, clip_bounds=clip_bounds)
             finetuned.fit(pupil_train_ft, screen_train_ft)
             results[deg] = _eval(finetuned, 'finetuned', deg)
             best_estimator = finetuned
@@ -265,11 +271,12 @@ def run(opt):
     print("=" * 60)
     print(f"Preprocessing / loading subjects ({dataset})...")
     print("=" * 60)
+    frame_only = getattr(opt, 'frame_only', False)
     subject_data = {}
     for s in subjects:
         subject_data[s] = load_subject_data(
             s, opt.data_dir, opt.eye, opt.relabel, fov, fov_center,
-            dataset=dataset, motion=motion,
+            dataset=dataset, motion=motion, frame_only=frame_only,
         )
 
     if opt.val_subject is not None:

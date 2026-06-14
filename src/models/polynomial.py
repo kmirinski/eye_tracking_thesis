@@ -4,12 +4,18 @@ from sklearn.linear_model import LinearRegression
 
 class GazeEstimator:
 
-    def __init__(self, degree=5):
+    def __init__(self, degree=5, clip_bounds=None):
         self.degree = degree
         self.poly = PolynomialFeatures(degree=degree)
 
         self.regressor_x = LinearRegression()
         self.regressor_y = LinearRegression()
+
+        # Optional per-axis (lo, hi) bounds the predictions are clipped to. High-degree
+        # polynomials extrapolate wildly on inputs outside the training hull; clipping to
+        # the valid gaze range (screen px for ebveye, [0,1] for ev_eye) removes the
+        # nonsensical off-screen outliers that otherwise dominate the mean error / DoD.
+        self.clip_bounds = clip_bounds
 
         self.is_fitted = False
 
@@ -41,7 +47,11 @@ class GazeEstimator:
         x_s = self.regressor_x.predict(X_poly)
         y_s = self.regressor_y.predict(X_poly)
 
-        return np.column_stack([x_s, y_s])
+        predictions = np.column_stack([x_s, y_s])
+        if self.clip_bounds is not None:
+            lo, hi = self.clip_bounds
+            predictions = np.clip(predictions, lo, hi)
+        return predictions
     
 
     def evaluate(self, pupil_centers, screen_coords):
