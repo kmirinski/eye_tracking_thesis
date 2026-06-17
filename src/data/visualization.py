@@ -539,8 +539,8 @@ def browse_pupil_extraction(frame_list, config, screen_coords, start=0):
 
     state = {'pos': start, 'input': ''}
 
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10), dpi=150)
-    plt.subplots_adjust(bottom=0.08)
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8), dpi=150)
+    plt.subplots_adjust(bottom=0.06, top=0.93, wspace=0.02, hspace=0.08)
 
     def render(pos):
         list_idx = chron_indices[pos]
@@ -555,32 +555,34 @@ def browse_pupil_extraction(frame_list, config, screen_coords, start=0):
             ax.axis('off')
 
         axes[0, 0].imshow(img, cmap='gray')
-        axes[0, 0].set_title('Original Image')
+        axes[0, 0].text(0.5, -0.02, '(a)', transform=axes[0, 0].transAxes,
+                        ha='center', va='top', fontsize=21)
 
         axes[0, 1].imshow(binary, cmap='gray')
-        axes[0, 1].set_title('Binarized (Hθ)')
+        axes[0, 1].text(0.5, -0.02, '(b)', transform=axes[0, 1].transAxes,
+                        ha='center', va='top', fontsize=21)
 
         axes[0, 2].imshow(opened, cmap='gray')
-        axes[0, 2].set_title('After Opening (◦ Sσ)')
+        axes[0, 2].text(0.5, -0.02, '(c)', transform=axes[0, 2].transAxes,
+                        ha='center', va='top', fontsize=21)
 
         axes[1, 0].imshow(contour_img, cmap='gray')
-        axes[1, 0].set_title('Contours')
+        axes[1, 0].text(0.5, -0.02, '(d)', transform=axes[1, 0].transAxes,
+                        ha='center', va='top', fontsize=21)
 
         axes[1, 1].imshow(img, cmap='gray')
         if len(selected_points) > 0:
             axes[1, 1].scatter(selected_points[:, 0], selected_points[:, 1],
-                               c='red', s=1, alpha=0.5)
-        axes[1, 1].set_title(f'Selected Contour ({len(selected_points)} points)')
+                               c='lime', s=1, alpha=0.5)
+        axes[1, 1].text(0.5, -0.02, '(e)', transform=axes[1, 1].transAxes,
+                        ha='center', va='top', fontsize=21)
 
         img_with_ellipse = img.copy()
         if ellipse is not None:
-            cv2.ellipse(img_with_ellipse, ellipse, 255, 1)
+            cv2.ellipse(img_with_ellipse, ellipse, (0, 255, 0), 1)
         axes[1, 2].imshow(img_with_ellipse, cmap='gray')
-        if ellipse is not None:
-            center = (int(ellipse[0][0]), int(ellipse[0][1]))
-            axes[1, 2].set_title(f'Fitted Ellipse  Center: {center}')
-        else:
-            axes[1, 2].set_title('No Ellipse Fitted')
+        axes[1, 2].text(0.5, -0.02, '(f)', transform=axes[1, 2].transAxes,
+                        ha='center', va='top', fontsize=21)
 
         jump_hint = f'  jump: {state["input"]}_' if state['input'] else '  type number + Enter to jump'
         status = f'ellipse {(int(ellipse[0][0]), int(ellipse[0][1]))}' if ellipse is not None else 'NO DETECTION'

@@ -330,9 +330,34 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
     ftrain_y, feval_y, eveval_y = (frame_screens[frame_train], frame_screens[frame_eval],
                                    ev_labels[ev_eval])
 
+    # Stale-frame baseline: predict each eval event from the most-recent frame's pupil
+    # center (i.e. *no* event tracking — hold the last frame center). Comparing this to the
+    # event-tracked DoD answers whether the ICP tracking actually improves over doing nothing:
+    #   stale ≈ tracked  → tracking adds little; the error is intrinsic to scoring at event
+    #                       timestamps against 100 Hz Tobii labels (and saccade oversampling).
+    #   stale ≫ tracked  → tracking is following the pupil; the residual is the tracker's
+    #                       accuracy ceiling and is what's worth improving.
+    fts_sorted_idx = np.argsort(frame_ts)
+    fts_sorted = frame_ts[fts_sorted_idx]
+    fp_sorted = frame_pupils[fts_sorted_idx]
+    fs_sorted = frame_screens[fts_sorted_idx]
+    ev_eval_ts = ev_ts[ev_eval]
+    stale_idx = np.clip(np.searchsorted(fts_sorted, ev_eval_ts, side='right') - 1,
+                        0, len(fts_sorted) - 1)
+    stale_eval = normalize_pupils(fp_sorted[stale_idx], mean, std)
+
+    # Pure label-vs-label diagnostic (no model): angular distance between each event's Tobii
+    # label and its nearest frame's Tobii label, plus the timestamp gap to that frame. If this
+    # is large for temporally-close pairs, the event labels are mis-assigned (not a tracker issue).
+    lbl_mean, lbl_med = angular_dod(fs_sorted[stale_idx], eveval_y, gaze_config, normalized)
+    stale_gap_us = np.abs(ev_eval_ts - fts_sorted[stale_idx])
+    print(f"  [diag] event-label vs nearest-frame-label: mean={lbl_mean:.2f}°  median={lbl_med:.2f}°  "
+          f"| frame-gap median={np.median(stale_gap_us)/1000:.1f} ms  95th={np.percentile(stale_gap_us,95)/1000:.1f} ms")
+    print(f"  [diag] unique stale frames: {len(np.unique(stale_idx))} serving {len(stale_idx)} events")
+
     # Effective event update rate over the eval blocks (instantaneous, from median spacing).
     rate_str = ""
-    ev_ts_eval = np.sort(ev_ts[ev_eval])
+    ev_ts_eval = np.sort(ev_eval_ts)
     if len(ev_ts_eval) > 1:
         med_dt_us = float(np.median(np.diff(ev_ts_eval)))
         if med_dt_us > 0:
@@ -340,16 +365,57 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
     print(f"Calibration frames: {len(ftrain)}  |  eval frames: {len(feval)}  |  "
           f"eval events: {len(eveval)}{rate_str}")
 
+    # Fixation vs saccade split: angular travel of the Tobii label over a ±1-frame window.
+    # During a fixation the eye is still, so the tracker should match a fresh frame detection;
+    # if event-tracked DoD on stable samples ≈ frame DoD, the tracker is accurate and the bulk
+    # error is saccade/label-limited (a 100 Hz-reference limitation, not a fixable tracker bug).
+    win_us = 40000
+    o = np.argsort(ev_eval_ts)
+    ts_s, lab_s = ev_eval_ts[o], eveval_y[o]
+    j_a = np.clip(np.searchsorted(ts_s, ts_s + win_us), 0, len(ts_s) - 1)
+    j_b = np.clip(np.searchsorted(ts_s, ts_s - win_us), 0, len(ts_s) - 1)
+    d_a = _gaze_unit_dirs(lab_s[j_a], gaze_config, normalized)
+    d_b = _gaze_unit_dirs(lab_s[j_b], gaze_config, normalized)
+    travel = np.degrees(np.arccos(np.clip(np.sum(d_a * d_b, axis=1), -1.0, 1.0)))
+    stable = np.empty(len(eveval), dtype=bool)
+    stable[o] = travel < 3.0   # <3° gaze travel over ~80 ms → fixation / slow pursuit
+    print(f"  eval events: {stable.sum()} stable (fixation) | {(~stable).sum()} moving (saccade)")
+
     clip_bounds = gaze_clip_bounds(gaze_config, normalized)
     for deg in gaze_config.poly_degrees:
         print(f"\n--- Degree {deg} ---")
         estimator = GazeEstimator(degree=deg, clip_bounds=clip_bounds)
         estimator.fit(ftrain, ftrain_y)
 
+        ev_pred = estimator.predict(eveval)
         f_mean, f_med = angular_dod(estimator.predict(feval), feval_y, gaze_config, normalized)
-        e_mean, e_med = angular_dod(estimator.predict(eveval), eveval_y, gaze_config, normalized)
-        print(f"  frames    (25 Hz): DoD mean={f_mean:.2f}°  median={f_med:.2f}°  (n={len(feval)})")
-        print(f"  events (hi-freq) : DoD mean={e_mean:.2f}°  median={e_med:.2f}°  (n={len(eveval)})")
+        e_mean, e_med = angular_dod(ev_pred, eveval_y, gaze_config, normalized)
+        s_mean, s_med = angular_dod(estimator.predict(stale_eval), eveval_y, gaze_config, normalized)
+        st_mean, st_med = angular_dod(ev_pred[stable], eveval_y[stable], gaze_config, normalized)
+        mv_mean, mv_med = angular_dod(ev_pred[~stable], eveval_y[~stable], gaze_config, normalized)
+        stale_pred = estimator.predict(stale_eval)
+        ss_mean, ss_med = angular_dod(stale_pred[stable], eveval_y[stable], gaze_config, normalized)
+        # Polynomial error on the stale frames vs their OWN frame labels (fixation subset):
+        # isolates whether these anchor frames are simply hard for the regressor.
+        sl_mean, sl_med = angular_dod(stale_pred[stable], fs_sorted[stale_idx][stable],
+                                      gaze_config, normalized)
+        print(f"  [diag deg{deg}] stale-frame vs OWN frame-label @ fixation: "
+              f"mean={sl_mean:.2f}°  median={sl_med:.2f}°")
+        # Per-event anchor residual = poly error of the anchor frame vs its own label.
+        ua = _gaze_unit_dirs(stale_pred, gaze_config, normalized)
+        ub = _gaze_unit_dirs(fs_sorted[stale_idx], gaze_config, normalized)
+        anchor_resid = np.degrees(np.arccos(np.clip(np.sum(ua * ub, axis=1), -1.0, 1.0)))
+        good = anchor_resid < 5.0
+        if good.sum():
+            g_mean, g_med = angular_dod(ev_pred[good], eveval_y[good], gaze_config, normalized)
+            print(f"  [diag deg{deg}] events anchored to GOOD frames (<5° anchor resid): "
+                  f"mean={g_mean:.2f}°  median={g_med:.2f}°  (n={good.sum()}/{len(good)})")
+        print(f"  frames     (25 Hz)    : DoD mean={f_mean:.2f}°  median={f_med:.2f}°  (n={len(feval)})")
+        print(f"  events     (hi-freq)  : DoD mean={e_mean:.2f}°  median={e_med:.2f}°  (n={len(eveval)})")
+        print(f"  stale-frame (baseline): DoD mean={s_mean:.2f}°  median={s_med:.2f}°  (no event tracking)")
+        print(f"  events @ fixation     : DoD mean={st_mean:.2f}°  median={st_med:.2f}°  (n={stable.sum()})")
+        print(f"  stale  @ fixation     : DoD mean={ss_mean:.2f}°  median={ss_med:.2f}°  (last frame, eye still)")
+        print(f"  events @ saccade      : DoD mean={mv_mean:.2f}°  median={mv_med:.2f}°  (n={(~stable).sum()})")
 
         if opt.ge_plots:
             plot_gaze_predictions(estimator.predict(eveval), eveval_y,
