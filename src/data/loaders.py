@@ -44,7 +44,7 @@ def read_aerdat(filepath, mode):
         return events
     else:
         return event_list
-
+ 
 def read_events_txt(filepath, mode):
     """Parse ev_eye text events: 'timestamp x y polarity' per line.
     Returns same layout as read_aerdat: columns [polarity, row, col, timestamp].
@@ -146,20 +146,19 @@ class EvEyeDataset:
     SACCADIC_SESSIONS = ['session_1_0_1', 'session_1_0_2']
     PURSUIT_SESSIONS  = ['session_2_0_1', 'session_2_0_2']
 
-    def __init__(self, data_dir, subject, motion='saccadic', mode='np',
-                 screen_width_px=1920, screen_height_px=1080):
+    def __init__(self, data_dir, subject, motion='saccadic', mode='np'):
         self.data_dir = data_dir
         self.subject = subject
         self.motion = motion
         self.mode = mode
-        self.screen_width_px = screen_width_px
-        self.screen_height_px = screen_height_px
         self.sessions = (self.SACCADIC_SESSIONS if motion == 'saccadic'
                          else self.PURSUIT_SESSIONS)
 
         self.frame_list = []
         self.event_list = None
         self.event_stack = []
+        self.alignment_gaps = None   # per-frame |frame_ts - nearest Tobii ts| (µs), storage order
+        self.gaze_records = None     # (M,3): davis_us, x_norm(col), y_norm(row)
 
     def _subject_name(self):
         return f'user{self.subject}'
@@ -184,7 +183,7 @@ class EvEyeDataset:
                 try:
                     entry = json.loads(line)
                     gaze2d = entry.get('data', {}).get('gaze2d')
-                    if gaze2d is not None:
+                    if gaze2d is not None and 0 <= gaze2d[0] <= 1 and 0 <= gaze2d[1] <= 1:
                         davis_us = startime_us + int(entry['timestamp'] * 1e6)
                         records.append([davis_us, gaze2d[0], gaze2d[1]])
                 except (json.JSONDecodeError, KeyError):
@@ -268,15 +267,23 @@ class EvEyeDataset:
         best     = np.where(np.abs(gaze_ts[prev_idx] - frame_ts) <
                             np.abs(gaze_ts[idx]      - frame_ts), prev_idx, idx)
 
+        deltas_us = np.abs(gaze_ts[best] - frame_ts)
+        print(f"Frame-gaze alignment: median gap {np.median(deltas_us):.0f} µs, "
+              f"max {np.max(deltas_us):.0f} µs, 95th pct {np.percentile(deltas_us, 95):.0f} µs")
+
         frame_list = []
         for i, (ts, path) in enumerate(raw_frames):
             gi  = best[i]
-            col = int(round(gaze_records[gi, 1] * self.screen_width_px))
-            row = int(round(gaze_records[gi, 2] * self.screen_height_px))
+            col = gaze_records[gi, 1]
+            row = gaze_records[gi, 2]
             frame_list.append(Frame(row, col, path, ts))
 
         # Storage order: newest first (reverse of chronological)
         self.frame_list = frame_list[::-1]
+        # Keep per-frame alignment gaps (storage order) and the raw Tobii records so the
+        # pipeline can drop badly-aligned frames and label event samples by nearest Tobii.
+        self.alignment_gaps = deltas_us[::-1]
+        self.gaze_records = gaze_records
 
         print('Loading Events...')
         self.event_list = self.load_event_data(eye)

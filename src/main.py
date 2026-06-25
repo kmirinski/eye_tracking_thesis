@@ -17,6 +17,24 @@ parser.add_argument('--motion', default='saccadic', choices=['saccadic', 'pursui
                     help='motion type to load: saccadic or smooth pursuit')
 parser.add_argument('--model', default="regressor", choices=['regressor', 'lstm'],
                     help='choose model type to estimate gaze')
+parser.add_argument('--frame_only', action='store_true',
+                    help='regressor: train/eval on frame pupil detections only, excluding event ellipses')
+parser.add_argument('--events_eval', action='store_true',
+                    help='regressor: calibrate on frame centers, then evaluate gaze DoD on the '
+                         'high-frequency event-tracked centers (high-frequency gaze protocol)')
+parser.add_argument('--eval_split', default='blocks', choices=['blocks', 'within'],
+                    help='regressor --events_eval split protocol: "blocks" assigns whole time '
+                         'blocks to calibration vs eval (leakage-free); "within" takes train_ratio '
+                         'of frames from every block to calibrate and evaluates on the remaining '
+                         'frames from each block plus all events')
+parser.add_argument('--good_anchor_thresh', type=float, nargs='+', default=[5.0],
+                    help='events_eval: anchor-residual threshold(s) in degrees defining the '
+                         '"GOOD frames" event subset. Pass multiple values to sweep, e.g. '
+                         '--good_anchor_thresh 5 7 9 11 13')
+parser.add_argument('--val_ratio_sweep', type=float, nargs='+', default=None,
+                    help='events_eval (blocks mode): val_ratio value(s) controlling the '
+                         'calibration/evaluation set-size split (fraction of time blocks held out '
+                         'for eval). Pass multiple to sweep, e.g. --val_ratio_sweep 0.1 0.2 0.3 0.4 0.5')
 
 
 # Debug/Inspect options
@@ -34,6 +52,8 @@ parser.add_argument('--event_diag', action='store_true',
                     help='plot event extraction diagnostic: ellipse centres over time + size distributions (requires --model lstm)')
 parser.add_argument('--loss_plot', action='store_true',
                     help='plot training vs validation loss curve after LSTM training')
+parser.add_argument('--no_event_filter', action='store_true',
+                    help='disable event outlier filtering (residual/blink/drift gates) in template tracking')
 
 
 # Relabeling options
@@ -57,6 +77,10 @@ parser.add_argument('--val_subject', type=int, default=None,
                     help='subject to hold out for evaluation (cross-subject mode only); if omitted, runs full LOO')
 parser.add_argument('--fine_tune', action='store_true',
                     help='fine-tune the cross-subject LSTM on a small portion of the val subject\'s data')
+parser.add_argument('--lstm_events', action='store_true',
+                    help='cross-subject LSTM: include event ellipses (frame+event) instead of frame-only')
+parser.add_argument('--preprocess_only', action='store_true',
+                    help='cross-subject: warm every subject cache, then exit before training (for cluster pre-warming)')
 
 
 if __name__ == '__main__':

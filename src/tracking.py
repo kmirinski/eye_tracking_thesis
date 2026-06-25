@@ -98,7 +98,7 @@ def points_to_edge_matching(candidates, boundary_Q, max_iter=50, convergence=0.0
     T_total = np.zeros(2)
 
     for _ in range(max_iter):
-        _, indices = tree.query(P)
+        dists, indices = tree.query(P)
         nearest = boundary_Q[indices]
         delta_T = np.mean(nearest - P, axis=0)
 
@@ -109,7 +109,13 @@ def points_to_edge_matching(candidates, boundary_Q, max_iter=50, convergence=0.0
         if t_norm > 0 and np.linalg.norm(delta_T) / t_norm < convergence:
             break
 
-    return T_total
+    # Residual = mean nearest-neighbor distance of the translated candidates to the
+    # boundary (points-to-edge analog of E-Gaze's fit score). High residual = the
+    # candidate events do not lie on the pupil ring (eyelid/blink contamination).
+    final_dists, _ = tree.query(P)
+    residual = float(final_dists.mean())
+
+    return T_total, residual
 
 
 class PupilTracker:

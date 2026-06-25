@@ -43,7 +43,9 @@ def _run_detection(frame: Frame, config: FrameDetectionConfig):
         cx, cy = ellipse[0]
         area = ellipse_area(ellipse)
 
-        valid = (aspect_ratio >= config.min_aspect_ratio and area >= config.min_ellipse_area)
+        valid = (aspect_ratio >= config.min_aspect_ratio
+                 and area >= config.min_ellipse_area
+                 and (config.max_ellipse_area is None or area <= config.max_ellipse_area))
 
         if config.center_min is not None:
             valid = valid and config.center_min[0] < cx <= config.center_max[0]

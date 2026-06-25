@@ -21,12 +21,12 @@ class FrameDetectionConfig:
     triangle_size: int = 100         # leg length in px of the corner triangle to exclude
     extra_triangle_corners: tuple = ()  # additional corners to exclude, e.g. ('lower_left',)
     min_ellipse_area: float = 210   # π * (w/2) * (h/2) in px²
+    max_ellipse_area: float = None  # π * (w/2) * (h/2) in px²; None = no limit
 
 
 # Per-subject overrides for FrameDetectionConfig.
 # Only list fields that differ from the dataclass defaults above.
-SUBJECT_FRAME_DETECTION_OVERRIDES: dict = {
-    # example:
+EBVEYE_FRAME_DETECTION_OVERRIDES: dict = {
     4:  {"threshold": 10, "morph_kernel_size": 4, 'min_aspect_ratio': 0.38, "triangle_size": 150},
     5:  {"threshold": 13, "morph_kernel_size": 3},
     6: {'threshold': 10, 'morph_kernel_size': 4, 'min_aspect_ratio': 0.25},
@@ -38,14 +38,40 @@ SUBJECT_FRAME_DETECTION_OVERRIDES: dict = {
     19: {'threshold': 15, 'morph_kernel_size': 2, 'min_aspect_ratio': 0.25},
     21: {'threshold': 10, 'morph_kernel_size': 4, 'min_aspect_ratio': 0.25},
     22: {'threshold': 10, 'morph_kernel_size': 4, 'min_aspect_ratio': 0.25},
-
 }
 
+EV_EYE_FRAME_DETECTION_OVERRIDES: dict = {
+    4:  {"extra_triangle_corners": ('lower_left', 'upper_left')},
+    5: {"threshold": 20, "morph_kernel_size": 2, "extra_triangle_corners": ('lower_left', 'upper_left')},
+    6: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 180, "extra_triangle_corners": ('lower_left', "upper_right"), "max_ellipse_area": 5000},
+    7: {"morph_kernel_size": 2, "extra_triangle_corners": ('lower_left', 'upper_right', 'lower_right'), "min_ellipse_area": 190},
+    8: {"morph_kernel_size": 2, "triangle_size": 150, "extra_triangle_corners": ('lower_left', 'upper_right'), "min_ellipse_area": 140},
+    22: {"morph_kernel_size": 2, "triangle_size": 200, "extra_triangle_corners": ('lower_left',)},
+    25: {"threshold": 30, "morph_kernel_size": 4, 'min_aspect_ratio': 0.38, "extra_triangle_corners": ('lower_left',)},
+    29: {"threshold": 24, "morph_kernel_size": 2, "triangle_size": 200, "extra_triangle_corners": ('lower_left', 'upper_left'), "min_ellipse_area": 300}, # A bit sus
+    30: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 120, "extra_triangle_corners": ('upper_left', 'upper_right')},
+    31: {"threshold": 20, "morph_kernel_size": 2, "extra_triangle_corners": ('upper_left', 'lower_left')},
+    32: {"morph_kernel_size": 2},
+    33: {"morph_kernel_size": 2},
+    34: {"threshold": 20, "morph_kernel_size": 2, 'min_aspect_ratio': 0.25, "triangle_size": 200, "extra_triangle_corners": ('lower_left',)},
+    35: {"triangle_size": 150, "extra_triangle_corners": ('upper_left', 'lower_left'), 'min_aspect_ratio': 0.25, "min_ellipse_area": 140},
+    36: {"threshold":20, "morph_kernel_size": 2, 'min_aspect_ratio': 0.25, "min_ellipse_area": 140},
+    40: {"threshold": 20, "extra_triangle_corners": ('upper_right', 'upper_left', 'lower_left'), "morph_kernel_size": 1, 'min_aspect_ratio': 0.25, "min_ellipse_area": 130},
+    41: {"threshold": 13, "morph_kernel_size": 1}, # A bit sus
+    42: {"extra_triangle_corners": ('lower_left'), "morph_kernel_size": 2},
+    43: {"morph_kernel_size": 1},
+    44: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 180, "extra_triangle_corners": ('lower_left',)},
+}
 
-def get_frame_detection_config(subject: int, eye: str) -> FrameDetectionConfig:
+def get_frame_detection_config(subject: int, eye: str, dataset: str = 'ebveye') -> FrameDetectionConfig:
     """Return a FrameDetectionConfig with defaults + per-subject overrides applied."""
     corner = 'upper_right' if eye == 'left' else 'upper_left'
-    overrides = SUBJECT_FRAME_DETECTION_OVERRIDES.get(subject, {})
+
+    if dataset == 'ev_eye':
+        overrides = dict(EV_EYE_FRAME_DETECTION_OVERRIDES.get(subject, {}))
+        return FrameDetectionConfig(triangle_corner=corner, **overrides)
+
+    overrides = EBVEYE_FRAME_DETECTION_OVERRIDES.get(subject, {})
     return FrameDetectionConfig(triangle_corner=corner, **overrides)
 
 
@@ -64,6 +90,11 @@ class TemplateTrackingConfig:
     convergence: float = 0.01
     max_icp_iter: int = 50
     num_boundary: int = 360
+    # Event outlier filtering (Option B). Thresholds are ratios of gamma_bar (mean
+    # pupil-boundary radius) so they are scale-invariant across subjects/pupil sizes.
+    enable_filter: bool = True
+    max_residual_ratio: float = 0.15   # reject batch if mean points-to-edge residual > ratio * gamma_bar
+    max_drift_ratio: float = 2.0      # reject batch if |new_center - frame anchor| > ratio * gamma_bar
 
 @dataclass
 class KDEConfig:
@@ -73,14 +104,17 @@ class KDEConfig:
 
 @dataclass
 class GazeConfig:
-    poly_degrees: list = (5, 6, 7, 8, 12)
+    poly_degrees: list = (1, 2, 3, 4, 5, 6, 8, 12)
     train_ratio: float = 0.8
     val_ratio: float = 0.2
+    fine_tune_ratio: float = 0.4         # fraction of held-out subject data used for fine-tuning/calibration
     saccade_skip_frames: int = 20
     relabel_diff_threshold: float = 1.5  # px; eye displacement below this = stable fixation
     relabel_max_frames: int = 20         # safety cap: never relabel more than this many frames per label change
     post_blink_skip_frames: int = 1      # valid frames to discard after each blink run
     post_saccade_stability_window: int = 6  # consecutive stable frames required before Phase C begins
+    max_alignment_gap_us: int = 15000    # ev_eye: drop frames/events whose nearest Tobii sample is >15ms away
+    n_time_blocks: int = 20              # ev_eye: contiguous time blocks for leakage-free calib/eval split
     screen_width_px: int = 1920
     screen_height_px: int = 1080
     screen_fov_x_deg: float = 96.0       # full horizontal FoV of the screen in degrees
@@ -101,20 +135,30 @@ def get_gaze_config(subject: int) -> GazeConfig:
     return GazeConfig(**overrides)
 
 
+# Subjects included in leave-one-out cross-subject evaluation, per dataset.
+# Shared by both the regressor (cross_subject_regressor.py) and LSTM
+# (cross_subject_lstm.py) cross-subject runners.
+CROSS_SUBJECT_SUBJECTS: dict = {
+    'ebveye': [4, 5, 6, 7, 11, 12, 15, 18, 19, 21, 22],
+    # 'ev_eye': [4, 5, 6, 7, 8, 22, 25, 29, 30, 31, 32, 33, 34, 35, 36, 44],
+    'ev_eye': [4, 5, 6, 7, 8, 22, 25, 29, 30, 31, 33, 34, 35, 36, 44],
+    # 'ev_eye': [33, 34, 35, 36, 44],
+}
+
+
 @dataclass
 class LSTMConfig:
     seq_len: int = 10
     lstm_units: int = 128
     dense_units: tuple = (64, 32, 16)
     l1_reg: float = 1e-4
-    epochs: int = 1500
-    batch_size: int = 10
-    learning_rate: float = 2e-4
+    epochs: int = 150                       # cap only; EarlyStopping ends training earlier
+    batch_size: int = 256                   # sized for GPU throughput (was 32 for CPU)
+    learning_rate: float = 5e-4             # raised with batch size (fewer updates/epoch)
     lr_decay_rate: float = 0.98
     lr_decay_steps: int = 1000
-    early_stop_patience: int = 5000           # epochs without val_loss improvement before stopping
+    early_stop_patience: int = 8            # val_loss bottoms ~epoch 2; 8 confirms minimum without wasting GPU
     fine_tune_lr: float = 2e-5              # 10× lower than initial LR
-    fine_tune_epochs: int = 150
-    fine_tune_batch_size: int = 32
-    fine_tune_ratio: float = 0.4            # fraction of val subject data used for fine-tuning
+    fine_tune_epochs: int = 20              # FT loss plateaus by ~epoch 20; no val monitoring
+    fine_tune_batch_size: int = 64
     freeze_lstm: bool = True                # if True, freeze LSTM layer during fine-tuning

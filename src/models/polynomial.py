@@ -4,12 +4,18 @@ from sklearn.linear_model import LinearRegression
 
 class GazeEstimator:
 
-    def __init__(self, degree=5):
+    def __init__(self, degree=5, clip_bounds=None):
         self.degree = degree
         self.poly = PolynomialFeatures(degree=degree)
 
         self.regressor_x = LinearRegression()
         self.regressor_y = LinearRegression()
+
+        # Optional per-axis (lo, hi) bounds the predictions are clipped to. High-degree
+        # polynomials extrapolate wildly on inputs outside the training hull; clipping to
+        # the valid gaze range (screen px for ebveye, [0,1] for ev_eye) removes the
+        # nonsensical off-screen outliers that otherwise dominate the mean error / DoD.
+        self.clip_bounds = clip_bounds
 
         self.is_fitted = False
 
@@ -24,7 +30,7 @@ class GazeEstimator:
 
         train_pred = self.predict(pupil_centers)
         train_error = np.sqrt(np.mean(np.sum((train_pred - screen_coords)**2, axis=1)))
-        print(f"Training RMSE: {train_error:.2f} pixels")
+        print(f"Training RMSE: {train_error:.5f} pixels")
 
         return self
 
@@ -41,7 +47,11 @@ class GazeEstimator:
         x_s = self.regressor_x.predict(X_poly)
         y_s = self.regressor_y.predict(X_poly)
 
-        return np.column_stack([x_s, y_s])
+        predictions = np.column_stack([x_s, y_s])
+        if self.clip_bounds is not None:
+            lo, hi = self.clip_bounds
+            predictions = np.clip(predictions, lo, hi)
+        return predictions
     
 
     def evaluate(self, pupil_centers, screen_coords):
@@ -50,6 +60,7 @@ class GazeEstimator:
 
         errors = predictions - screen_coords
         euclidean_errors = np.sqrt(np.sum(errors ** 2, axis=1))
+        abs_err = np.abs(errors)  # col 0 = vertical (row), col 1 = horizontal (col)
 
         metrics = {
             'mse': np.mean(np.sum(errors ** 2, axis=1)),
@@ -57,7 +68,11 @@ class GazeEstimator:
             'mean_error': np.mean(euclidean_errors),
             'std_error': np.std(euclidean_errors),
             'max_error': np.max(euclidean_errors),
-            'median_error': np.median(euclidean_errors)
+            'median_error': np.median(euclidean_errors),
+            'mean_error_v': np.mean(abs_err[:, 0]),
+            'mean_error_h': np.mean(abs_err[:, 1]),
+            'median_error_v': np.median(abs_err[:, 0]),
+            'median_error_h': np.median(abs_err[:, 1]),
         }
         
         return metrics
