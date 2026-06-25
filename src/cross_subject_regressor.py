@@ -36,7 +36,7 @@ from pipeline.pipeline import (
     template_tracking_stage,
 )
 from pipeline.runners import (fov_filter_mask, _fov_rect, split_by_label, split_by_time_blocks,
-                              errors_to_degrees, angular_dod, gaze_clip_bounds)
+                              angular_dod, gaze_clip_bounds)
 from processing.normalization import compute_pupil_stats, normalize_pupils
 from results_io import fold_filename, metrics_row, save_fold, save_accumulated
 
@@ -212,11 +212,8 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
                                         gaze_config, normalized=normalized)
         m['dod_mean'] = dod_mean
         m['dod_median'] = dod_med
-        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
-                                         gaze_config, normalized=normalized)
-        print(f"  [{phase}] mse={m['mse']:.5f}px²  mean={m['mean_error']:.5f}px  "
-              f"rmse={m['rmse']:.5f}px  median={m['median_error']:.5f}px")
-        print(f"    per-axis: h={h_deg:.2f}°  v={v_deg:.2f}°  |  DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
+        print(f"  [{phase}] Distance Error: mean={m['mean_error']:.5f}px  "
+              f"median={m['median_error']:.5f}px  |  DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
         row = {
             'model': 'regressor', 'dataset': dataset, 'motion': motion, 'eye': eye,
             'val_subject': val_subject, 'fine_tune': int(fine_tune), 'relabel': int(relabel),
@@ -310,23 +307,15 @@ def run(opt):
     print("=" * 60)
     print("Summary (best degree per fold)")
     print("=" * 60)
-    gaze_config = GazeConfig()
-    normalized = (dataset == 'ev_eye')
-    h_degs, v_degs, dods = [], [], []
+    dods = []
     for s in subjects:
         m = all_results[s]
-        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
-                                         gaze_config, normalized=normalized)
-        h_degs.append(h_deg)
-        v_degs.append(v_deg)
         dods.append(m['dod_mean'])
-        print(f"  {s:>3}: mean={m['mean_error']:.5f}px  rmse={m['rmse']:.5f}px  "
-              f"median={m['median_error']:.5f}px  std={m['std_error']:.5f}px  "
-              f"| h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={m['dod_mean']:.2f}°")
+        print(f"  {s:>3}: Distance Error mean={m['mean_error']:.5f}px  "
+              f"median={m['median_error']:.5f}px  |  DoD={m['dod_mean']:.2f}°")
     mean_errors = [all_results[s]['mean_error'] for s in subjects]
-    print(f"\nOverall mean error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
-    print(f"Overall per-axis: horizontal {np.mean(h_degs):.2f} ± {np.std(h_degs):.2f}°  |  "
-          f"vertical {np.mean(v_degs):.2f} ± {np.std(v_degs):.2f}°")
+    print(f"\nOverall Distance Error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
+    print(f"Overall DoD: {np.mean(dods):.2f} ± {np.std(dods):.2f}°")
     print(f"Overall DoD: {np.mean(dods):.2f} ± {np.std(dods):.2f}°")
 
     # Accumulate every fold of this LOO run into one self-contained CSV at the

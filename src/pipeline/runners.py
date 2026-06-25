@@ -25,20 +25,6 @@ def gaze_clip_bounds(gaze_config, normalized):
     return lo, hi
 
 
-def errors_to_degrees(err_v, err_h, gaze_config, normalized):
-    """Convert per-axis label-unit errors to degrees of visual angle.
-
-    Label/error column 0 = vertical (row, height/screen_fov_y_deg), column 1 =
-    horizontal (col, width/screen_fov_x_deg). Linear FoV approximation, matching
-    fov_filter_mask. normalized=True for ev_eye ([0,1] labels), False for ebveye (px).
-    """
-    if normalized:
-        return (err_v * gaze_config.screen_fov_y_deg,
-                err_h * gaze_config.screen_fov_x_deg)
-    return (err_v / (gaze_config.screen_height_px / gaze_config.screen_fov_y_deg),
-            err_h / (gaze_config.screen_width_px  / gaze_config.screen_fov_x_deg))
-
-
 def _gaze_unit_dirs(coords, gaze_config, normalized):
     """Map screen points to unit gaze direction vectors via a flat-screen pinhole model.
 
@@ -60,7 +46,7 @@ def _gaze_unit_dirs(coords, gaze_config, normalized):
 def angular_dod(pred, gt, gaze_config, normalized):
     """Difference of Direction: mean & median angular gaze error (degrees) between the
     predicted and ground-truth gaze direction vectors. This is the metric reported by
-    EV-Eye/E-Gaze (single combined angle), unlike the per-axis errors_to_degrees.
+    EV-Eye/E-Gaze (single combined angle).
 
     pred/gt: (N,2), col 0 = vertical (row/y), col 1 = horizontal (col/x).
     normalized=True for ev_eye ([0,1] labels), False for ebveye (px). Returns (mean, median).
@@ -244,9 +230,8 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
         val_metrics = gaze_estimator.evaluate(eval_pupil, eval_screen)
         dod_mean, dod_med = angular_dod(gaze_estimator.predict(eval_pupil), eval_screen,
                                         gaze_config, normalized)
-        print(f"Validation MSE:        {val_metrics['mse']:.5f} pixels²")
-        print(f"Validation RMSE: {val_metrics['rmse']:.5f} pixels")
-        print(f"Validation Mean Error: {val_metrics['mean_error']:.5f} pixels")
+        print(f"Distance Error: mean={val_metrics['mean_error']:.5f}px  "
+              f"median={val_metrics['median_error']:.5f}px")
         print(f"DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
 
         if opt.ge_plots:
@@ -551,10 +536,13 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
 
     eval_X, eval_y = X_val, y_val
 
+    normalized = getattr(opt, 'dataset', 'ebveye') == 'ev_eye'
     val_metrics = lstm_estimator.evaluate(eval_X, eval_y)
-    print(f"Validation MSE:        {val_metrics['mse']:.5f} pixels²")
-    print(f"Validation RMSE:       {val_metrics['rmse']:.5f} pixels")
-    print(f"Validation Mean Error: {val_metrics['mean_error']:.5f} pixels")
+    dod_mean, dod_med = angular_dod(lstm_estimator.predict(eval_X), eval_y,
+                                    gaze_config, normalized)
+    print(f"Distance Error: mean={val_metrics['mean_error']:.5f}px  "
+          f"median={val_metrics['median_error']:.5f}px")
+    print(f"DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
 
     if opt.ge_plots:
         val_pred = lstm_estimator.predict(eval_X)
@@ -586,10 +574,13 @@ def run_lstm_combined(combined_samples, gaze_config, opt):
     lstm_estimator = LSTMGazeEstimator(lstm_config)
     lstm_estimator.fit(X_train, y_train, X_val, y_val)
 
+    normalized = getattr(opt, 'dataset', 'ebveye') == 'ev_eye'
     val_metrics = lstm_estimator.evaluate(X_val, y_val)
-    print(f"Validation MSE:        {val_metrics['mse']:.5f} pixels²")
-    print(f"Validation RMSE:       {val_metrics['rmse']:.5f} pixels")
-    print(f"Validation Mean Error: {val_metrics['mean_error']:.5f} pixels")
+    dod_mean, dod_med = angular_dod(lstm_estimator.predict(X_val), y_val,
+                                    gaze_config, normalized)
+    print(f"Distance Error: mean={val_metrics['mean_error']:.5f}px  "
+          f"median={val_metrics['median_error']:.5f}px")
+    print(f"DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
 
     if opt.ge_plots:
         val_pred = lstm_estimator.predict(X_val)

@@ -31,7 +31,7 @@ from pipeline.pipeline import (
     build_valid_mask, label_events_from_tobii, merge_frame_event_samples, noise_flagging_stage,
     pupil_extraction_stage, relabeling_stage, template_tracking_stage,
 )
-from pipeline.runners import fov_filter_mask, errors_to_degrees, angular_dod
+from pipeline.runners import fov_filter_mask, angular_dod
 from results_io import fold_filename, metrics_row, save_fold
 
 CACHE_DIR  = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
@@ -163,10 +163,8 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
         dod_mean, dod_med = angular_dod(estimator.predict(X), y, gaze_config, normalized=normalized)
         m['dod_mean'] = dod_mean
         m['dod_median'] = dod_med
-        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
-                                         gaze_config, normalized=normalized)
-        print(f"Subject {val_subject} {phase} — mse={m['mse']:.5f}px²  mean={m['mean_error']:.5f}px  "
-              f"rmse={m['rmse']:.5f}px  | h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={dod_mean:.2f}°")
+        print(f"Subject {val_subject} {phase} — Distance Error: mean={m['mean_error']:.5f}px  "
+              f"median={m['median_error']:.5f}px  |  DoD={dod_mean:.2f}°")
         row = {
             'model': 'lstm', 'dataset': dataset, 'motion': motion, 'eye': eye,
             'val_subject': val_subject, 'fine_tune': int(fine_tune), 'relabel': int(relabel),
@@ -272,23 +270,14 @@ def main(data_dir, val_subject, ge_plots, fov, fov_center,
     print("=" * 60)
     print("Summary")
     print("=" * 60)
-    gaze_config = GazeConfig()
-    normalized = (dataset == 'ev_eye')
-    h_degs, v_degs, dods = [], [], []
+    dods = []
     for s in subjects:
         m = results[s]
-        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
-                                         gaze_config, normalized=normalized)
-        h_degs.append(h_deg)
-        v_degs.append(v_deg)
         dods.append(m['dod_mean'])
-        print(f"  {s:>3}: mean={m['mean_error']:.5f}px  rmse={m['rmse']:.5f}px  "
-              f"median={m['median_error']:.5f}px  std={m['std_error']:.5f}px  "
-              f"| h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={m['dod_mean']:.2f}°")
+        print(f"  {s:>3}: Distance Error mean={m['mean_error']:.5f}px  "
+              f"median={m['median_error']:.5f}px  |  DoD={m['dod_mean']:.2f}°")
     mean_errors = [results[s]['mean_error'] for s in subjects]
-    print(f"\nOverall mean error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
-    print(f"Overall per-axis: horizontal {np.mean(h_degs):.2f} ± {np.std(h_degs):.2f}°  |  "
-          f"vertical {np.mean(v_degs):.2f} ± {np.std(v_degs):.2f}°")
+    print(f"\nOverall Distance Error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
     print(f"Overall DoD: {np.mean(dods):.2f} ± {np.std(dods):.2f}°")
 
 

@@ -178,8 +178,8 @@ class LSTMGazeEstimator:
         self.is_fitted = True
 
         train_pred = self.predict(X_train)
-        train_rmse = np.sqrt(np.mean(np.sum((train_pred - y_train) ** 2, axis=1)))
-        print(f"LSTM Training RMSE: {train_rmse:.5f} pixels")
+        train_dist = np.mean(np.sqrt(np.sum((train_pred - y_train) ** 2, axis=1)))
+        print(f"LSTM Training Distance Error: {train_dist:.5f} pixels")
 
         return self
 
@@ -215,8 +215,8 @@ class LSTMGazeEstimator:
             self.model.layers[1].trainable = True   # restore for any subsequent use
 
         ft_pred = self.predict(X_ft)
-        ft_rmse = np.sqrt(np.mean(np.sum((ft_pred - y_ft) ** 2, axis=1)))
-        print(f"LSTM Fine-tune RMSE (on fine-tune data): {ft_rmse:.5f} pixels")
+        ft_dist = np.mean(np.sqrt(np.sum((ft_pred - y_ft) ** 2, axis=1)))
+        print(f"LSTM Fine-tune Distance Error (on fine-tune data): {ft_dist:.5f} pixels")
         return self
 
     def predict(self, X):
@@ -229,17 +229,9 @@ class LSTMGazeEstimator:
         predictions = self.predict(X)
         y = np.array(y)
         errors = predictions - y
+        # Distance Error: Euclidean distance (px) between predicted and true gaze point.
         euclidean = np.sqrt(np.sum(errors ** 2, axis=1))
-        abs_err = np.abs(errors)  # col 0 = vertical (row), col 1 = horizontal (col)
         return {
-            'mse':          np.mean(np.sum(errors ** 2, axis=1)),
-            'rmse':         np.sqrt(np.mean(np.sum(errors ** 2, axis=1))),
             'mean_error':   np.mean(euclidean),
-            'std_error':    np.std(euclidean),
-            'max_error':    np.max(euclidean),
             'median_error': np.median(euclidean),
-            'mean_error_v':   np.mean(abs_err[:, 0]),
-            'mean_error_h':   np.mean(abs_err[:, 1]),
-            'median_error_v': np.median(abs_err[:, 0]),
-            'median_error_h': np.median(abs_err[:, 1]),
         }
