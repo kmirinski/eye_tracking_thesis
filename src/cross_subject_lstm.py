@@ -83,7 +83,7 @@ def load_subject_data(subject, data_dir, fov, fov_center,
     pupil_centers, ellipses, screen_coords = pupil_extraction_stage(eye_dataset, frame_config)
     blink_mask = noise_flagging_stage(pupil_centers)
     if do_relabel:
-        sc, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
+        sc, saccade_mask, _ = relabeling_stage(pupil_centers, screen_coords, gaze_config)
     else:
         sc, saccade_mask = screen_coords, None
     skip_label_changes = (dataset == 'ebveye') and (motion == 'saccadic') and not do_relabel

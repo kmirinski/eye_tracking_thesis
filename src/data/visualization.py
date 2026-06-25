@@ -413,18 +413,28 @@ def plot_pupil_diffs(pupil_centers, screen_coords):
     plt.show()
 
 
-def plot_relabeling_diagnostic(pupil_chron, screen_chron_original, phase_labels, blink_mask_chron):
+def plot_relabeling_diagnostic(pupil_chron, screen_chron_original, phase_labels,
+                               blink_mask_chron, threshold=1.5, n_transitions_zoom=6,
+                               save_path='relabel_phases.png'):
     """
-    Two-panel diagnostic for relabeling phase assignment.
+    Single-panel diagnostic for the relabeling phases.
 
-    Top: displacement curve for the saccade section with Phase A/B/C shading and blink markers.
-    Bottom: stacked bar chart of Phase A/B/C frame counts per label transition.
+    Plots the frame-to-frame pupil displacement along the x-axis (column) for the saccade
+    section, shaded by phase and zoomed onto ~n_transitions_zoom label switches in the
+    middle of the recording. Phase names match the thesis:
+        A pre-saccade  |  B saccade  |  C settling  |  D post-saccade
 
     All inputs in chronological order.
     """
     from pipeline.pipeline import _find_sections
 
-    PHASE_COLORS = {'A': '#aec6e8', 'B': '#f4a9a8', 'C': '#b7e4c7'}
+    PHASE_COLORS = {'A': '#aec6e8', 'B': '#f4a9a8', 'C': '#ffd8a8', 'D': '#b7e4c7'}
+    PHASE_LABELS = {
+        'A': 'Phase A (pre-saccade, relabeled)',
+        'B': 'Phase B (saccade, discarded)',
+        'C': 'Phase C (settling, discarded)',
+        'D': 'Phase D (post-saccade, new label)',
+    }
 
     sections = _find_sections(screen_chron_original)
     if not sections:
@@ -432,7 +442,7 @@ def plot_relabeling_diagnostic(pupil_chron, screen_chron_original, phase_labels,
         return
     sac_start, sac_end = sections[0]
 
-    # Blink-aware displacement (same logic as plot_pupil_diffs, restricted to saccade section)
+    # Blink-aware x-axis displacement (|Δx| vs. last valid pupil), restricted to saccade section
     n = len(pupil_chron)
     diffs = np.zeros(n)
     last_valid = None
@@ -440,7 +450,7 @@ def plot_relabeling_diagnostic(pupil_chron, screen_chron_original, phase_labels,
         if np.all(pupil_chron[i] == -1):
             continue
         if last_valid is not None:
-            diffs[i] = np.linalg.norm(pupil_chron[i] - last_valid)
+            diffs[i] = abs(pupil_chron[i][0] - last_valid[0])
         last_valid = pupil_chron[i].copy()
 
     # Label change indices (from original screen_coords, within saccade section)
@@ -451,25 +461,21 @@ def plot_relabeling_diagnostic(pupil_chron, screen_chron_original, phase_labels,
             change_indices.append(i)
             prev = screen_chron_original[i].copy()
 
-    # Per-transition phase counts for bar chart
-    # Boundaries: [sac_start, change_indices[0], ..., change_indices[-1], sac_end]
-    boundaries = [sac_start] + change_indices + [sac_end]
-    n_transitions = len(boundaries) - 1
-    counts = {'A': np.zeros(n_transitions, dtype=int),
-              'B': np.zeros(n_transitions, dtype=int),
-              'C': np.zeros(n_transitions, dtype=int)}
-    for t in range(n_transitions):
-        seg = phase_labels[boundaries[t]:boundaries[t + 1]]
-        for p in ('A', 'B', 'C'):
-            counts[p][t] = np.sum(seg == p)
+    # Zoom window: ~n_transitions_zoom label switches around the middle of the recording
+    if len(change_indices) >= 2:
+        mid = len(change_indices) // 2
+        lo = max(0, mid - n_transitions_zoom // 2)
+        hi = min(len(change_indices) - 1, lo + n_transitions_zoom)
+        x_lo = max(sac_start, change_indices[lo] - 5)
+        x_hi = min(sac_end, change_indices[hi] + 5)
+    else:
+        x_lo, x_hi = sac_start, sac_end
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(22, 8), dpi=200,
-                                   gridspec_kw={'height_ratios': [2, 1]})
+    fig, ax = plt.subplots(figsize=(16, 5), dpi=200)
 
-    # --- Top panel: displacement + shading ---
+    # Displacement curve
     xs = np.arange(sac_start, sac_end)
-    ax1.plot(xs, diffs[sac_start:sac_end], lw=0.8, color='steelblue',
-             label='pupil displacement (px)', zorder=3)
+    ax.plot(xs, diffs[sac_start:sac_end], lw=1.0, color='steelblue', zorder=3)
 
     # Phase background shading
     i = sac_start
@@ -479,49 +485,47 @@ def plot_relabeling_diagnostic(pupil_chron, screen_chron_original, phase_labels,
             j = i + 1
             while j < sac_end and phase_labels[j] == p:
                 j += 1
-            ax1.axvspan(i, j, color=PHASE_COLORS[p], alpha=0.5, zorder=1)
+            ax.axvspan(i, j, color=PHASE_COLORS[p], alpha=0.5, zorder=1)
             i = j
         else:
             i += 1
 
-    # Label change markers
+    # Relabel threshold + label-change markers
+    ax.axhline(threshold, color='dimgray', linestyle=':', linewidth=1.0, zorder=2)
     for ci in change_indices:
-        ax1.axvline(ci, color='black', linestyle='--', linewidth=0.7, alpha=0.8, zorder=4)
+        ax.axvline(ci, color='black', linestyle='--', linewidth=0.7, alpha=0.8, zorder=4)
 
     # Blink markers
     blink_xs = np.where(blink_mask_chron[sac_start:sac_end])[0] + sac_start
     if len(blink_xs):
-        ax1.plot(blink_xs, np.zeros(len(blink_xs)), 'v', color='orange',
-                 markersize=5, label='blink', zorder=5)
+        ax.plot(blink_xs, np.zeros(len(blink_xs)), 'v', color='orange',
+                markersize=5, zorder=5)
 
-    # Legend patches
+    # Y-limit fitted to the visible window
+    win = diffs[x_lo:x_hi]
+    y_max = float(np.max(win)) if len(win) and np.max(win) > 0 else 1.0
+    ax.set_ylim(0, max(y_max * 1.1, threshold * 1.5))
+    ax.set_xlim(x_lo, x_hi)
+
     import matplotlib.patches as mpatches
-    legend_handles = [
-        mpatches.Patch(color=PHASE_COLORS['A'], alpha=0.7, label='Phase A (relabeled)'),
-        mpatches.Patch(color=PHASE_COLORS['B'], alpha=0.7, label='Phase B (saccade discard)'),
-        mpatches.Patch(color=PHASE_COLORS['C'], alpha=0.7, label='Phase C (new label kept)'),
-        plt.Line2D([0], [0], color='steelblue', lw=0.8, label='displacement (px)'),
+    legend_handles = [mpatches.Patch(color=PHASE_COLORS[p], alpha=0.7, label=PHASE_LABELS[p])
+                      for p in ('A', 'B', 'C', 'D')]
+    legend_handles += [
+        plt.Line2D([0], [0], color='steelblue', lw=1.0, label='|Δx| pupil displacement'),
+        plt.Line2D([0], [0], color='dimgray', linestyle=':', lw=1.0,
+                   label=f'threshold ({threshold:g} px)'),
         plt.Line2D([0], [0], color='black', linestyle='--', lw=0.7, label='label change'),
         plt.Line2D([0], [0], marker='v', color='orange', lw=0, markersize=5, label='blink'),
     ]
-    ax1.legend(handles=legend_handles, loc='upper right', fontsize=7)
-    ax1.set_xlabel('Frame index (chronological)')
-    ax1.set_ylabel('Displacement (px)')
-    ax1.set_title('Relabeling phase diagnostic — saccade section')
-    ax1.grid(True, alpha=0.3)
-
-    # --- Bottom panel: stacked bar chart ---
-    x = np.arange(n_transitions)
-    ax2.bar(x, counts['A'], color=PHASE_COLORS['A'], label='Phase A')
-    ax2.bar(x, counts['B'], bottom=counts['A'], color=PHASE_COLORS['B'], label='Phase B')
-    ax2.bar(x, counts['C'], bottom=counts['A'] + counts['B'], color=PHASE_COLORS['C'], label='Phase C')
-    ax2.set_xlabel('Transition index')
-    ax2.set_ylabel('Frame count')
-    ax2.set_title('Phase A/B/C frames per label transition')
-    ax2.legend(loc='upper right', fontsize=7)
-    ax2.grid(True, alpha=0.3, axis='y')
+    ax.legend(handles=legend_handles, loc='upper right', fontsize=14, ncol=2)
+    ax.set_xlabel('Frame index', fontsize=20, labelpad=15)
+    ax.set_ylabel('x displacement (px)', fontsize=20, labelpad=15)
+    ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+        print(f"Saved relabeling diagnostic to {save_path}")
     plt.show()
 
 

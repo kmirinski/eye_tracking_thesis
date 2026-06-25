@@ -37,25 +37,31 @@ def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relab
                                stability_window=0):
     '''
     For each label change (after the first) in the saccadic section:
-        - Phase A: while the eye is stable (dist to last_valid < threshold), relabel frames to old label
-        - Phase B: while the eye is moving (dist >= threshold), mark frames to discard (saccade)
-        - Phase D: discard until stability_window consecutive frames are all below threshold
-        - Phase C: remaining frames keep the new label
+        - Phase A (pre-saccade):  while the eye is stable (dist to last_valid < threshold), relabel frames to old label
+        - Phase B (saccade):      while the eye is moving (dist >= threshold), mark frames to discard
+        - Phase C (settling):     discard until stability_window consecutive frames are all below threshold
+        - Phase D (post-saccade): remaining frames keep the new label
 
     Blink frames (pupil == -1) in Phase A are relabeled (filtered anyway by basic mask).
-    Blink frames in Phase B/D are discarded. Diffs are always vs. last valid pupil to avoid
+    Blink frames in Phase B/C are discarded. Diffs are always vs. last valid pupil to avoid
     false saccade triggers from blinks.
 
-    Returns (screen_coords_relabled, saccade_discard_mask) in storage order.
+    Returns (screen_coords_relabled, saccade_discard_mask, phase_labels) in storage order.
     '''
     n = len(screen_coords)
     pupil_chron = pupil_centers[::-1]
     screen_chron = screen_coords[::-1].copy()
     saccade_mask_chron = np.zeros(n, dtype=bool)
+    # Per-frame phase (chronological), aligned with the thesis terminology:
+    #   'A' pre-saccade (relabeled to previous target)
+    #   'B' saccade     (active flight, discarded)
+    #   'C' settling    (stability window, discarded)
+    #   'D' post-saccade(kept with the current/new label)
+    phase_chron = np.full(n, 'none', dtype=object)
 
     sections = _find_sections(screen_chron)
     if not sections:
-        return screen_coords.copy(), saccade_mask_chron[::-1]
+        return screen_coords.copy(), saccade_mask_chron[::-1], phase_chron[::-1]
 
     sac_start, sac_end = sections[0]
 
@@ -82,11 +88,13 @@ def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relab
         while m < sac_end and (m - change_idx) < max_relabel_frames:
             if np.all(pupil_chron[m] == -1):
                 screen_chron[m] = old_label     # blink: relabel (filtered by basic mask anyway)
+                phase_chron[m] = 'A'
                 m += 1
                 continue
             dist = np.linalg.norm(pupil_chron[m] - last_valid)
             if dist < threshold:
                 screen_chron[m] = old_label
+                phase_chron[m] = 'A'
                 last_valid = pupil_chron[m].copy()
                 m += 1
             else:
@@ -96,38 +104,49 @@ def relabel_transition_frames(pupil_centers, screen_coords, threshold, max_relab
         while m < sac_end:
             if np.all(pupil_chron[m] == -1):
                 saccade_mask_chron[m] = True    # blink during saccade: discard
+                phase_chron[m] = 'B'
                 m += 1
                 continue
             dist = np.linalg.norm(pupil_chron[m] - last_valid)
             if dist >= threshold:
                 saccade_mask_chron[m] = True
+                phase_chron[m] = 'B'
                 last_valid = pupil_chron[m].copy()
                 m += 1
             else:
-                break   # large movement ended, Phase D begins
+                break   # large movement ended, settling begins
 
-        # Phase D: stability window — discard until stability_window consecutive frames are below threshold
+        # Settling: stability window — discard until stability_window consecutive frames are below threshold
         stable_count = 0
         while m < sac_end and stable_count < stability_window:
             if np.all(pupil_chron[m] == -1):
                 saccade_mask_chron[m] = True   # blink resets window
+                phase_chron[m] = 'C'
                 stable_count = 0
                 m += 1
                 continue
             dist = np.linalg.norm(pupil_chron[m] - last_valid)
             if dist >= threshold:
                 saccade_mask_chron[m] = True   # spike: discard and reset window
+                phase_chron[m] = 'C'
                 last_valid = pupil_chron[m].copy()
                 stable_count = 0
                 m += 1
             else:
                 saccade_mask_chron[m] = True   # within stability window: discard
+                phase_chron[m] = 'C'
                 last_valid = pupil_chron[m].copy()
                 stable_count += 1
                 m += 1
-        # Phase C begins at m (eye settled)
+        # Post-saccade (kept) frames begin at m (eye settled)
 
-    return screen_chron[::-1], saccade_mask_chron[::-1]
+    # Remaining saccade-section frames are kept on the current target: post-saccade
+    # fixation (and the initial fixation before the first target change).
+    for i in range(sac_start, sac_end):
+        if phase_chron[i] == 'none':
+            phase_chron[i] = 'D'
+
+    return screen_chron[::-1], saccade_mask_chron[::-1], phase_chron[::-1]
 
 
 def build_valid_mask(blink_mask, screen_coords, skip_frames,
@@ -437,9 +456,11 @@ def run_pipeline(opt):
 
     saccade_mask = None
     screen_coords_original = screen_coords.copy()
+    phase_chron_storage = None
     if opt.relabel and motion == 'saccadic' and dataset != 'ev_eye':
         with timer("Relabeling"):
-            screen_coords, saccade_mask = relabeling_stage(pupil_centers, screen_coords, gaze_config)
+            screen_coords, saccade_mask, phase_chron_storage = relabeling_stage(
+                pupil_centers, screen_coords, gaze_config)
 
     # skip_label_changes only makes sense for ebveye, where target jumps between
     # discrete fixation points. For ev_eye, Tobii labels are continuous floats —
@@ -457,14 +478,11 @@ def run_pipeline(opt):
 
     if opt.relabel_diag and opt.relabel:
         from data.visualization import plot_relabeling_diagnostic
-        phase_labels = compute_phase_labels(
-            screen_coords_original[::-1],
-            screen_coords[::-1],
-            saccade_mask[::-1],
-            blink_mask[::-1],
+        plot_relabeling_diagnostic(
+            pupil_centers[::-1], screen_coords_original[::-1],
+            phase_chron_storage[::-1], blink_mask[::-1],
+            threshold=gaze_config.relabel_diff_threshold,
         )
-        plot_relabeling_diagnostic(pupil_centers[::-1], screen_coords_original[::-1],
-                                   phase_labels, blink_mask[::-1])
 
     if opt.video:
         write_ellipse_video(eye_dataset.frame_list, ellipses, screen_coords)
