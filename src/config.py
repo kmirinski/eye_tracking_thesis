@@ -56,10 +56,10 @@ EV_EYE_FRAME_DETECTION_OVERRIDES: dict = {
     34: {"threshold": 20, "morph_kernel_size": 2, 'min_aspect_ratio': 0.25, "triangle_size": 200, "extra_triangle_corners": ('lower_left',)},
     35: {"triangle_size": 150, "extra_triangle_corners": ('upper_left', 'lower_left'), 'min_aspect_ratio': 0.25, "min_ellipse_area": 140},
     36: {"threshold":20, "morph_kernel_size": 2, 'min_aspect_ratio': 0.25, "min_ellipse_area": 140},
-    40: {},
-    41: {},
-    42: {},
-    43: {},
+    40: {"threshold": 20, "extra_triangle_corners": ('upper_right', 'upper_left', 'lower_left'), "morph_kernel_size": 1, 'min_aspect_ratio': 0.25, "min_ellipse_area": 130},
+    41: {"threshold": 13, "morph_kernel_size": 1}, # A bit sus
+    42: {"extra_triangle_corners": ('lower_left'), "morph_kernel_size": 2},
+    43: {"morph_kernel_size": 1},
     44: {"threshold": 20, "morph_kernel_size": 2, "triangle_size": 180, "extra_triangle_corners": ('lower_left',)},
 }
 
@@ -113,7 +113,7 @@ class GazeConfig:
     relabel_max_frames: int = 20         # safety cap: never relabel more than this many frames per label change
     post_blink_skip_frames: int = 1      # valid frames to discard after each blink run
     post_saccade_stability_window: int = 6  # consecutive stable frames required before Phase C begins
-    max_alignment_gap_us: int = 10000    # ev_eye: drop frames/events whose nearest Tobii sample is >10ms away
+    max_alignment_gap_us: int = 15000    # ev_eye: drop frames/events whose nearest Tobii sample is >15ms away
     n_time_blocks: int = 20              # ev_eye: contiguous time blocks for leakage-free calib/eval split
     screen_width_px: int = 1920
     screen_height_px: int = 1080

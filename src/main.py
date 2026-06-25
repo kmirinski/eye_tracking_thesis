@@ -22,6 +22,19 @@ parser.add_argument('--frame_only', action='store_true',
 parser.add_argument('--events_eval', action='store_true',
                     help='regressor: calibrate on frame centers, then evaluate gaze DoD on the '
                          'high-frequency event-tracked centers (high-frequency gaze protocol)')
+parser.add_argument('--eval_split', default='blocks', choices=['blocks', 'within'],
+                    help='regressor --events_eval split protocol: "blocks" assigns whole time '
+                         'blocks to calibration vs eval (leakage-free); "within" takes train_ratio '
+                         'of frames from every block to calibrate and evaluates on the remaining '
+                         'frames from each block plus all events')
+parser.add_argument('--good_anchor_thresh', type=float, nargs='+', default=[5.0],
+                    help='events_eval: anchor-residual threshold(s) in degrees defining the '
+                         '"GOOD frames" event subset. Pass multiple values to sweep, e.g. '
+                         '--good_anchor_thresh 5 7 9 11 13')
+parser.add_argument('--val_ratio_sweep', type=float, nargs='+', default=None,
+                    help='events_eval (blocks mode): val_ratio value(s) controlling the '
+                         'calibration/evaluation set-size split (fraction of time blocks held out '
+                         'for eval). Pass multiple to sweep, e.g. --val_ratio_sweep 0.1 0.2 0.3 0.4 0.5')
 
 
 # Debug/Inspect options
