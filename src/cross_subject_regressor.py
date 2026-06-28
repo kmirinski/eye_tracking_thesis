@@ -22,7 +22,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import (CROSS_SUBJECT_SUBJECTS, GazeConfig, TemplateTrackingConfig,
+from config import (CROSS_SUBJECT_SUBJECTS, TemplateTrackingConfig,
                     get_frame_detection_config, get_gaze_config)
 from data.loaders import EyeDataset, EvEyeDataset
 from data.visualization import plot_gaze_predictions
@@ -63,7 +63,7 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
 
     print(f"Subject {subject}: preprocessing...")
     frame_config = get_frame_detection_config(subject, eye, dataset=dataset)
-    gaze_config = get_gaze_config(subject)
+    gaze_config = get_gaze_config(subject, dataset)
 
     if dataset == 'ev_eye':
         eye_dataset = EvEyeDataset(
@@ -129,7 +129,8 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
         print(f"  Added {valid_ev.sum()} event ellipses → total samples: {len(pupil_centers)}")
 
     if fov is not None:
-        fov_mask = fov_filter_mask(screen_coords, fov[0], fov[1], gaze_config, center=fov_center)
+        fov_mask = fov_filter_mask(screen_coords, fov[0], fov[1], gaze_config,
+                                   center=fov_center, normalized=dataset == 'ev_eye')
         pupil_centers = pupil_centers[fov_mask]
         screen_coords = screen_coords[fov_mask]
         timestamps = timestamps[fov_mask]
@@ -154,7 +155,7 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
     calibration gain is directly comparable. Without fine_tune, only a baseline
     is evaluated, on the whole validation subject.
     """
-    gaze_config = GazeConfig()
+    gaze_config = get_gaze_config(val_subject, dataset)
     normalized = (dataset == 'ev_eye')
 
     # Compute per-subject normalization stats from raw pupils
@@ -245,7 +246,7 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
             plot_gaze_predictions(
                 val_pred, screen_eval,
                 title=f'Subject {val_subject} — Degree {deg}',
-                fov_rect=_fov_rect(fov, fov_center, gaze_config),
+                fov_rect=_fov_rect(fov, fov_center, gaze_config, normalized),
             )
 
     save_fold(csv_rows, fold_filename('regressor', dataset, motion, eye, val_subject,

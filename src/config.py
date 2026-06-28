@@ -130,9 +130,22 @@ SUBJECT_GAZE_OVERRIDES: dict = {
 }
 
 
-def get_gaze_config(subject: int) -> GazeConfig:
-    """Return a GazeConfig with defaults + per-subject overrides applied."""
-    overrides = SUBJECT_GAZE_OVERRIDES.get(subject, {})
+# Full screen field-of-view (horizontal, vertical) in degrees, per dataset. The two
+# datasets were collected on different monitor/distance setups, so the px<->angle
+# conversion (used by the DoD metric and FoV windowing) differs.
+DATASET_SCREEN_FOV: dict = {
+    'ebveye': (96.0, 64.0),
+    'ev_eye': (95.0, 63.0),
+}
+
+
+def get_gaze_config(subject: int, dataset: str = 'ebveye') -> GazeConfig:
+    """Return a GazeConfig with defaults + per-dataset FoV + per-subject overrides applied."""
+    overrides = dict(SUBJECT_GAZE_OVERRIDES.get(subject, {}))
+    fov_x, fov_y = DATASET_SCREEN_FOV.get(
+        dataset, (GazeConfig.screen_fov_x_deg, GazeConfig.screen_fov_y_deg))
+    overrides.setdefault('screen_fov_x_deg', fov_x)
+    overrides.setdefault('screen_fov_y_deg', fov_y)
     return GazeConfig(**overrides)
 
 

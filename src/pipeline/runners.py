@@ -57,35 +57,58 @@ def angular_dod(pred, gt, gaze_config, normalized):
     return float(np.mean(ang)), float(np.median(ang))
 
 
-def fov_filter_mask(screen_coords, fov_width_deg, fov_height_deg, gaze_config, center=None):
-    px_per_deg_x = gaze_config.screen_width_px / gaze_config.screen_fov_x_deg
-    px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
-    half_w_px = (fov_width_deg / 2) * px_per_deg_x
-    half_h_px = (fov_height_deg / 2) * px_per_deg_y
-    if center is None:
-        center_row = gaze_config.screen_height_px / 2
-        center_col = gaze_config.screen_width_px / 2
+def fov_filter_mask(screen_coords, fov_width_deg, fov_height_deg, gaze_config, center=None,
+                    normalized=False):
+    """Boolean mask keeping samples whose gaze label falls inside a centered FoV window.
+
+    The label space differs by dataset: ebveye labels are screen pixels, while ev_eye
+    labels are normalized to [0,1] spanning the full screen. ``normalized=True`` switches
+    to that [0,1] space — degrees map linearly across [0,1], so a fov_*_deg window has
+    half-extent (fov_*_deg / 2) / screen_fov_*_deg. ``center`` is given in the same units
+    as the labels (pixels or [0,1]); defaults to the screen centre.
+    """
+    if normalized:
+        half_w = (fov_width_deg / 2) / gaze_config.screen_fov_x_deg
+        half_h = (fov_height_deg / 2) / gaze_config.screen_fov_y_deg
+        center_row, center_col = (0.5, 0.5) if center is None else center
     else:
-        center_row, center_col = center
+        px_per_deg_x = gaze_config.screen_width_px / gaze_config.screen_fov_x_deg
+        px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
+        half_w = (fov_width_deg / 2) * px_per_deg_x
+        half_h = (fov_height_deg / 2) * px_per_deg_y
+        if center is None:
+            center_row = gaze_config.screen_height_px / 2
+            center_col = gaze_config.screen_width_px / 2
+        else:
+            center_row, center_col = center
     rows = screen_coords[:, 0]
     cols = screen_coords[:, 1]
-    return (np.abs(rows - center_row) <= half_h_px) & (np.abs(cols - center_col) <= half_w_px)
+    return (np.abs(rows - center_row) <= half_h) & (np.abs(cols - center_col) <= half_w)
 
 
-def _fov_rect(fov, fov_center, gaze_config):
-    """Return (row_min, row_max, col_min, col_max) in pixels for the FoV window, or None."""
+def _fov_rect(fov, fov_center, gaze_config, normalized=False):
+    """Return (row_min, row_max, col_min, col_max) for the FoV window, or None.
+
+    In pixel units for ebveye, or [0,1] units for ev_eye (normalized=True), matching the
+    label space the gaze plot is drawn in.
+    """
     if fov is None:
         return None
     fov_w_deg, fov_h_deg = fov
-    px_per_deg_x = gaze_config.screen_width_px / gaze_config.screen_fov_x_deg
-    px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
-    half_w = (fov_w_deg / 2) * px_per_deg_x
-    half_h = (fov_h_deg / 2) * px_per_deg_y
-    if fov_center is None:
-        cr = gaze_config.screen_height_px / 2
-        cc = gaze_config.screen_width_px / 2
+    if normalized:
+        half_w = (fov_w_deg / 2) / gaze_config.screen_fov_x_deg
+        half_h = (fov_h_deg / 2) / gaze_config.screen_fov_y_deg
+        cr, cc = (0.5, 0.5) if fov_center is None else fov_center
     else:
-        cr, cc = fov_center
+        px_per_deg_x = gaze_config.screen_width_px / gaze_config.screen_fov_x_deg
+        px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
+        half_w = (fov_w_deg / 2) * px_per_deg_x
+        half_h = (fov_h_deg / 2) * px_per_deg_y
+        if fov_center is None:
+            cr = gaze_config.screen_height_px / 2
+            cc = gaze_config.screen_width_px / 2
+        else:
+            cr, cc = fov_center
     return (cr - half_h, cr + half_h, cc - half_w, cc + half_w)
 
 
@@ -187,7 +210,8 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
 
     if opt.fov is not None:
         fov_w, fov_h = opt.fov
-        fov_mask = fov_filter_mask(screen_coords, fov_w, fov_h, gaze_config, center=opt.fov_center)
+        fov_mask = fov_filter_mask(screen_coords, fov_w, fov_h, gaze_config,
+                                   center=opt.fov_center, normalized=dataset == 'ev_eye')
         pupil_centers = pupil_centers[fov_mask]
         screen_coords = screen_coords[fov_mask]
         if timestamps is not None:
@@ -234,7 +258,7 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
         if opt.ge_plots:
             val_pred = gaze_estimator.predict(eval_pupil)
             plot_gaze_predictions(val_pred, eval_screen, title=f'Degree {deg} — validation set',
-                                  fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))
+                                  fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config, normalized))
 
 
 def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_config, opt,
@@ -291,9 +315,11 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
 
     if opt.fov is not None:
         fov_w, fov_h = opt.fov
-        fm = fov_filter_mask(frame_screens, fov_w, fov_h, gaze_config, center=opt.fov_center)
+        fm = fov_filter_mask(frame_screens, fov_w, fov_h, gaze_config,
+                             center=opt.fov_center, normalized=normalized)
         frame_pupils, frame_screens, frame_ts = frame_pupils[fm], frame_screens[fm], frame_ts[fm]
-        em = fov_filter_mask(ev_labels, fov_w, fov_h, gaze_config, center=opt.fov_center)
+        em = fov_filter_mask(ev_labels, fov_w, fov_h, gaze_config,
+                             center=opt.fov_center, normalized=normalized)
         ev_centers, ev_labels, ev_ts = ev_centers[em], ev_labels[em], ev_ts[em]
 
     # Temporal block split, shared between the two streams. Two protocols (opt.eval_split):
@@ -464,7 +490,7 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
             if opt.ge_plots:
                 plot_gaze_predictions(estimator.predict(eveval), eveval_y,
                                       title=f'Events eval — Degree {deg}',
-                                      fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))
+                                      fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config, normalized))
 
     for eff_val_ratio in val_ratios:
         _eval_for_val_ratio(eff_val_ratio)
@@ -515,7 +541,8 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
 
     if opt.fov is not None:
         fov_w, fov_h = opt.fov
-        fov_mask = fov_filter_mask(y, fov_w, fov_h, gaze_config, center=opt.fov_center)
+        fov_mask = fov_filter_mask(y, fov_w, fov_h, gaze_config, center=opt.fov_center,
+                                   normalized=getattr(opt, 'dataset', 'ebveye') == 'ev_eye')
         X, y = X[fov_mask], y[fov_mask]
 
     n = len(X)
@@ -545,7 +572,7 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
     if opt.ge_plots:
         val_pred = lstm_estimator.predict(eval_X)
         plot_gaze_predictions(val_pred, eval_y, title='LSTM — validation set',
-                              fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))
+                              fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config, normalized))
 
 
 def run_lstm_combined(combined_samples, gaze_config, opt):
@@ -556,7 +583,8 @@ def run_lstm_combined(combined_samples, gaze_config, opt):
 
     if opt.fov is not None:
         fov_w, fov_h = opt.fov
-        fov_mask = fov_filter_mask(y, fov_w, fov_h, gaze_config, center=opt.fov_center)
+        fov_mask = fov_filter_mask(y, fov_w, fov_h, gaze_config, center=opt.fov_center,
+                                   normalized=getattr(opt, 'dataset', 'ebveye') == 'ev_eye')
         X, y = X[fov_mask], y[fov_mask]
 
     n = len(X)
@@ -584,4 +612,4 @@ def run_lstm_combined(combined_samples, gaze_config, opt):
     if opt.ge_plots:
         val_pred = lstm_estimator.predict(X_val)
         plot_gaze_predictions(val_pred, y_val, title='LSTM (frame+event) — validation set',
-                              fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config))
+                              fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config, normalized))
