@@ -2,12 +2,19 @@
 #SBATCH --job-name=events_eval_reg
 #SBATCH --output=logs/events_eval_%a.out
 #SBATCH --time=00:30:00
-#SBATCH --partition=rome
+#SBATCH --account=tdsei17279
+#SBATCH --partition=gpu_a100
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=32G
+#SBATCH --gpus=1
 #SBATCH --array=0-19
+
+# NOTE: account tdsei17279 has GPU budget only (no CPU partition), so this
+# CPU-bound regressor runs on a GPU node. To spend less of the shared SBU
+# budget you can switch --partition to gpu_mig (a fractional A100 slice);
+# drop --cpus-per-task to ~9 if you do, since MIG slices have fewer cores.
 
 # Regressor events_eval sweep over every tuned ev_eye subject.
 # One array task per subject; each runs BOTH eval-split protocols
@@ -31,6 +38,7 @@ SUBJECT=${SUBJECTS[$SLURM_ARRAY_TASK_ID]}
 
 module load 2023
 module load Python/3.11.3-GCCcore-12.3.0
+module load CUDA/12.1.1
 
 source ~/eye_tracking_thesis/.venv/bin/activate
 cd ~/eye_tracking_thesis
