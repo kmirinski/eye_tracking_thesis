@@ -7,7 +7,6 @@ from data.visualization import plot_gaze_predictions
 from models.polynomial import GazeEstimator
 from models.lstm import LSTMGazeEstimator, build_lstm_sequences, build_lstm_sequences_combined
 from config import GazeConfig, LSTMConfig
-from processing.normalization import compute_pupil_stats, normalize_pupils
 
 
 def gaze_clip_bounds(gaze_config, normalized):
@@ -194,11 +193,9 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
         if timestamps is not None:
             timestamps = timestamps[fov_mask]
 
-    # Z-score pupil coordinates by this subject's own stats, mirroring the per-subject
-    # normalization the cross-subject path applies (cross_subject_regressor.run_fold);
-    # single-subject is the N=1 case. Keeps both regressor paths on one normalization.
-    mean, std = compute_pupil_stats(pupil_centers)
-    pupil_centers = normalize_pupils(pupil_centers, mean, std)
+    # Single-subject runs feed raw pupil coordinates to the model; input normalization
+    # is applied only in the cross-subject path (cross_subject_regressor.run_fold), where
+    # pooling subjects with differing pupil-coordinate ranges makes z-scoring necessary.
 
     if dataset == 'ev_eye' and timestamps is not None:
         pupil_train, pupil_val, screen_train, screen_val = split_by_time_blocks(
@@ -354,11 +351,11 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
         if len(val_ratios) > 1:
             print(f"\n======== val_ratio = {eff_val_ratio:g} ========")
 
-        # Normalize every stream with the calibration-frame stats (one shared input space).
-        mean, std = compute_pupil_stats(frame_pupils[frame_train])
-        ftrain = normalize_pupils(frame_pupils[frame_train], mean, std)
-        feval = normalize_pupils(frame_pupils[frame_eval], mean, std)
-        eveval = normalize_pupils(ev_centers[ev_eval], mean, std)
+        # Single-subject runs use raw pupil coordinates for every stream (input
+        # normalization is cross-subject only); all streams share the same pixel space.
+        ftrain = frame_pupils[frame_train]
+        feval = frame_pupils[frame_eval]
+        eveval = ev_centers[ev_eval]
         ftrain_y, feval_y, eveval_y = (frame_screens[frame_train], frame_screens[frame_eval],
                                        ev_labels[ev_eval])
 
@@ -376,7 +373,7 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
         ev_eval_ts = ev_ts[ev_eval]
         stale_idx = np.clip(np.searchsorted(fts_sorted, ev_eval_ts, side='right') - 1,
                             0, len(fts_sorted) - 1)
-        stale_eval = normalize_pupils(fp_sorted[stale_idx], mean, std)
+        stale_eval = fp_sorted[stale_idx]
 
         # Pure label-vs-label diagnostic (no model): angular distance between each event's Tobii
         # label and its nearest frame's Tobii label, plus the timestamp gap to that frame. If this
@@ -531,7 +528,8 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
 
     print(f"Training set: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
 
-    lstm_estimator = LSTMGazeEstimator(lstm_config)
+    # Single-subject: feed raw features (input normalization is cross-subject only).
+    lstm_estimator = LSTMGazeEstimator(lstm_config, pre_scaled=True)
     lstm_estimator.fit(X_train, y_train, X_val, y_val)
 
     eval_X, eval_y = X_val, y_val
@@ -571,7 +569,8 @@ def run_lstm_combined(combined_samples, gaze_config, opt):
 
     print(f"Training set: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
 
-    lstm_estimator = LSTMGazeEstimator(lstm_config)
+    # Single-subject: feed raw features (input normalization is cross-subject only).
+    lstm_estimator = LSTMGazeEstimator(lstm_config, pre_scaled=True)
     lstm_estimator.fit(X_train, y_train, X_val, y_val)
 
     normalized = getattr(opt, 'dataset', 'ebveye') == 'ev_eye'
