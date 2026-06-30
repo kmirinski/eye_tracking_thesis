@@ -280,6 +280,10 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
       'within' — from every block take train_ratio of the frames to calibrate and evaluate on the
         remaining frames in each block plus ALL events; denser calibration coverage at the cost of
         calibration/eval samples being temporally adjacent within a block.
+      'parity' — deterministic 50/50: rank frames by timestamp and calibrate on the odd-positioned
+        frames, evaluating on the even-positioned frames plus ALL events. Fixed split (val_ratio is
+        ignored). Note that because consecutive frames alternate parity, both halves cover every
+        target in the FoV — this measures unseen frames of seen targets, not spatial interpolation.
     Reporting the frame-eval and event-eval DoD side by side isolates the accuracy cost of
     using the event stream vs. the frame stream under one shared calibration.
     """
@@ -349,7 +353,16 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
 
     def _eval_for_val_ratio(eff_val_ratio):
         # Temporal block split, shared between the two streams (see opt.eval_split docstring).
-        if eval_split == 'within':
+        if eval_split == 'parity':
+            # Deterministic 50/50 by chronological position: odd-positioned frames calibrate,
+            # the rest (even) are evaluated, plus ALL events. Fixed split — eff_val_ratio unused.
+            order = np.argsort(frame_ts, kind='stable')
+            rank = np.empty(len(frame_ts), dtype=np.int64)
+            rank[order] = np.arange(len(frame_ts))
+            frame_train = (rank % 2) == 1   # odd positions → calibration
+            frame_eval = ~frame_train
+            ev_eval = np.ones(len(ev_ts), dtype=bool)
+        elif eval_split == 'within':
             fb = block_ids(frame_ts)
             rng = np.random.default_rng(42)
             frame_train = np.zeros(len(frame_ts), dtype=bool)
@@ -494,6 +507,8 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
 
     for eff_val_ratio in val_ratios:
         _eval_for_val_ratio(eff_val_ratio)
+        if eval_split == 'parity':
+            break  # parity is a fixed 50/50 split — sweeping val_ratio would just repeat it
 
     # When sweeping multiple val_ratio values, persist the frame-eval DoD per (degree, val_ratio)
     # so a plotting script can chart error vs split size. Only sweeps (>1 value) write a CSV.
