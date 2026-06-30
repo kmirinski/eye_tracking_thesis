@@ -10,6 +10,9 @@ What it reports, on the REAL pipeline code paths:
   2. events : FLOPs + memory of the template-tracking ICP fit, per emitted pupil
   3. regress: FLOPs to map one pupil center -> Point of Gaze
   4. system : total FLOPs and peak resident memory for the whole run
+  5. energy : first-order energy estimate, FLOPs scaled by a per-FLOP pJ constant
+  6. table  : thesis Table 5.1 metrics (Parameters + GFLOPs per inference) for direct
+              comparison against EV-Eye / FACET / TennSt / PupilUNet
 
 FLOPs are an analytical cost model evaluated over MEASURED operation counts:
 the script runs the actual pipeline, counts how many times each primitive runs
@@ -63,6 +66,23 @@ def fmt_bytes(x):
     return f"{x:8.0f}  B"
 
 
+def fmt_gflops(x):
+    """FLOPs -> GFLOPs string, matching the thesis Table 5.1 'GFLOPs' column."""
+    return f"{x / 1e9:.6f} GFLOP"
+
+
+def fmt_params(n):
+    """Param count -> 'N (X.XXX M)', matching Table 5.1 'Parameters' column."""
+    return f"{n} ({n / 1e6:.6f} M)"
+
+
+def fmt_energy(j):
+    for u, s in ((1.0, "J"), (1e-3, "mJ"), (1e-6, "uJ"), (1e-9, "nJ")):
+        if j >= u:
+            return f"{j / u:8.3f} {s}"
+    return f"{j * 1e12:8.3f} pJ"
+
+
 _PAGE = os.sysconf("SC_PAGE_SIZE")
 
 
@@ -95,6 +115,9 @@ def main():
     ap.add_argument("--motion", default="saccadic", choices=["saccadic", "pursuit"])
     ap.add_argument("--degree", type=int, default=2,
                     help="polynomial degree to analyze the regressor at")
+    ap.add_argument("--energy_pj_per_flop", type=float, default=1.0,
+                    help="energy cost per FLOP in picojoules, used for the first-order "
+                         "energy estimate (modern hardware ~0.1-10 pJ/FLOP)")
     opt = ap.parse_args()
 
     data_dir = DATASET_PATHS["ev_eye"]
@@ -157,6 +180,15 @@ def main():
     fl_fit = 36 * fit_pts[0] + 200 * fit_calls[0]
     frame_flops_total = fl_gray + fl_thresh + fl_morph + fl_contour + fl_fit
     frame_flops_per = frame_flops_total / n_frames
+
+    # Strict floating-point subset, for an apples-to-apples comparison with the paper's
+    # GFLOPs. NN profilers (the basis of the paper's 0.553 GFLOPs) count only the float
+    # multiply/adds of conv/linear layers. In this classical detector, threshold +
+    # morphology + contour are INTEGER comparisons on uint8 -> not floating-point ops at
+    # all. Only grayscale (weighted sum) and the conic least-squares ellipse fit are
+    # genuine floating-point arithmetic, so this is what is comparable to a NN's FLOPs.
+    frame_float_total = fl_gray + fl_fit
+    frame_float_per = frame_float_total / n_frames
 
     # frame-detection transient working set: img + gray + binary + opened +
     # contour_img held simultaneously inside _run_detection (uint8, BGR img = chans B/px)
@@ -252,6 +284,14 @@ def main():
     _, reg_py_peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
+    # Learnable parameters of the whole pipeline (Table 5.1 "Parameters" metric).
+    # The frame detector (threshold + morphology + contour/ellipse fit) and the ICP
+    # template updater are classical, NON-parametric algorithms: 0 learned weights.
+    # The only fitted model is the polynomial gaze regressor: two per-axis linear
+    # models, each with F coefficients (incl. the constant feature) + 1 intercept.
+    n_params_reg = int(est.regressor_x.coef_.size + est.regressor_y.coef_.size + 2)
+    n_params_total = n_params_reg          # detector + updater contribute 0
+
     # 2-variable polynomial of degree d -> F = (d+1)(d+2)/2 monomials
     F = (opt.degree + 1) * (opt.degree + 2) // 2
     # per prediction: ~F mults to expand monomials + two F-dim dot products (~4F)
@@ -290,6 +330,47 @@ def main():
     system_flops = frame_flops_total + icp_flops_total + reg_flops_per * total_outputs
     print(f"  whole run    : {fmt_flops(system_flops)} for {total_outputs} PoG "
           f"-> {fmt_flops(system_flops/max(total_outputs,1))} / PoG avg")
+
+    print("\n" + "-" * 78)
+    print(f"Energy estimate (first-order: FLOPs x {opt.energy_pj_per_flop:g} pJ/FLOP)")
+    print("-" * 78)
+    pj = opt.energy_pj_per_flop * 1e-12          # picojoules -> joules per FLOP
+    print("  rough model only: scales the analytical FLOP counts by a constant per-FLOP")
+    print("  energy; ignores memory traffic, control overhead, and kernel-specific costs.")
+    print(f"  frame -> PoG : {fmt_energy((frame_flops_per + reg_flops_per) * pj)} / PoG")
+    print(f"  event -> PoG : {fmt_energy((icp_flops_per + reg_flops_per) * pj)} / PoG")
+    print(f"  whole run    : {fmt_energy(system_flops * pj)} for {total_outputs} PoG "
+          f"-> {fmt_energy(system_flops * pj / max(total_outputs,1))} / PoG avg")
+
+    print("\n" + "=" * 78)
+    print("Table 5.1 metrics (Parameters + GFLOPs per inference) for THIS pipeline")
+    print("=" * 78)
+    print("Paper's GFLOPs (Sec. 4.2.2 / 5.2) = float multiply-add count of ONE network")
+    print("forward pass over a 346x260 frame (conv ops dominate); ellipse fitting excluded.")
+    print("'Parameters' = learnable model weights. This pipeline is classical (rule-based),")
+    print("so the comparable per-inference cost is reported two ways (see note below).")
+    print("")
+    print(f"  Parameters (whole pipeline) : {fmt_params(n_params_total)}")
+    print(f"      detector (frame, classical CV)    : 0  (non-parametric)")
+    print(f"      updater  (ICP template, classical): 0  (non-parametric)")
+    print(f"      gaze regressor (deg {opt.degree})             : {n_params_reg}  "
+          f"(2 axes x ({F} coefs + 1 intercept))")
+    print("")
+    print("  GFLOPs per detector inference (one 346x260 frame -> pupil):")
+    print(f"      float-only (comparable to paper) : {fmt_gflops(frame_float_per)}  "
+          f"(grayscale + ellipse-fit arithmetic)")
+    print(f"      all primitive ops (incl. integer): {fmt_gflops(frame_flops_per)}  "
+          f"(+ threshold/morphology/contour uint8 compares)")
+    print("  GFLOPs per updater inference (one event batch -> pupil):")
+    print(f"      ICP fit (all float)              : {fmt_gflops(icp_flops_per)}")
+    print("")
+    print("  NOTE: not a like-for-like number. (1) A CNN spends its FLOPs on millions of")
+    print("  float MACs across conv channels; this detector's heavy steps (morphology,")
+    print("  threshold, contour) are INTEGER uint8 compares, not FLOPs -- hence the")
+    print("  float-only figure is the honest comparison and is ~3 orders of magnitude")
+    print("  below 0.553 GFLOPs. (2) NN profilers usually report MACs (1 MAC ~ 2 FLOPs);")
+    print("  this script counts each multiply and add separately, so if the paper's number")
+    print("  is MACs, halve it to compare -- the order-of-magnitude gap is unaffected.")
 
     print("\n" + "=" * 78)
     print("MEMORY")

@@ -174,7 +174,8 @@ def grid_stats(xs, ys, vals, x_edges, y_edges):
     return mean, count
 
 
-def draw_heatmap(ax, fig, grid, x_edges, y_edges, cbar_label, fmt='{:.1f}', cmap='viridis'):
+def draw_heatmap(ax, fig, grid, x_edges, y_edges, cbar_label, fmt='{:.1f}', cmap='viridis',
+                 show_ylabel=True):
     cmap_obj = plt.get_cmap(cmap).copy()
     cmap_obj.set_bad('#ededed')                  # empty cells: soft grey
     masked = np.ma.masked_invalid(grid)
@@ -205,7 +206,8 @@ def draw_heatmap(ax, fig, grid, x_edges, y_edges, cbar_label, fmt='{:.1f}', cmap
                         color='white' if (v - vmin) / span < 0.55 else '0.1')
 
     ax.set_xlabel('Yaw [deg]', fontsize=16)
-    ax.set_ylabel('Pitch [deg]', fontsize=16)
+    if show_ylabel:
+        ax.set_ylabel('Pitch [deg]', fontsize=16)
     ax.set_xlim(x_edges[0], x_edges[-1])
     ax.set_ylim(y_edges[0], y_edges[-1])
     ax.set_aspect('equal')                       # true FoV proportions
@@ -231,15 +233,28 @@ def process_subject(subject, eye, dataset, motion, degree, grid, eval_split, out
     dod_grid, cnt_grid = grid_stats(s['deg_x'], s['deg_y'], s['dod'], x_edges, y_edges)
 
     tag = f"s{subject}_{eye}_{motion}_{eval_split}_d{degree}_{n}x{n}"
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6),
+                             gridspec_kw={'wspace': 0.32})
     draw_heatmap(axes[0], fig, dod_grid, x_edges, y_edges, 'Mean DoD [deg]')
     draw_heatmap(axes[1], fig, cnt_grid, x_edges, y_edges, 'Ellipses (count)',
-                 fmt='{:.0f}', cmap='magma')
-    fig.tight_layout()
+                 fmt='{:.0f}', cmap='magma', show_ylabel=False)
     out_path = os.path.join(out_dir, f'{tag}_label.png')
     fig.savefig(out_path, dpi=200, bbox_inches='tight', facecolor='white')
     plt.close(fig)
     print(f"    -> {out_path}")
+
+    # Singular per-matrix figures (same Yaw/Pitch labels as the combined figure).
+    for grid_data, cbar_label, fmt, cmap, suffix in (
+        (dod_grid, 'Mean DoD [deg]', '{:.1f}', 'viridis', 'dod'),
+        (cnt_grid, 'Ellipses (count)', '{:.0f}', 'magma', 'count'),
+    ):
+        sfig, sax = plt.subplots(figsize=(8, 6))
+        draw_heatmap(sax, sfig, grid_data, x_edges, y_edges, cbar_label,
+                     fmt=fmt, cmap=cmap)
+        single_path = os.path.join(out_dir, f'{tag}_label_{suffix}.png')
+        sfig.savefig(single_path, dpi=200, bbox_inches='tight', facecolor='white')
+        plt.close(sfig)
+        print(f"    -> {single_path}")
 
     print(f"  eval set: frames={s['n_frames']}  events={s['n_events']}  "
           f"total ellipses={len(s['dod'])}")

@@ -104,12 +104,6 @@ def draw_panel(ax, data, title, tag):
     ax.bar(x + width / 2, event_vals, width, color=EVENT['color'],
            label=f"{EVENT['label']} (mean {e_mean:.2f}°)")
 
-    # Across-subject mean lines (solid, series color) and paper reference lines (dashed).
-    ax.axhline(f_mean, color=FRAME['color'], lw=1.2, alpha=0.8)
-    ax.axhline(e_mean, color=EVENT['color'], lw=1.2, alpha=0.8)
-    ax.axhline(FRAME['ref'], color='gray', ls='--', lw=1, label=FRAME['ref_label'])
-    ax.axhline(EVENT['ref'], color='green', ls=':', lw=1, label=EVENT['ref_label'])
-
     ax.set_xticks(x)
     ax.set_xticklabels([str(s) for s in subjects], fontsize=15)
     ax.tick_params(axis='y', labelsize=15)
@@ -157,10 +151,6 @@ def draw_compare_panel(ax, whole, fov, title, tag):
            label=f"{WHOLE_FOV['label']} (mean {w_mean:.2f}°)")
     ax.bar(x + width / 2, f_vals, width, color=FOV40['color'],
            label=f"{FOV40['label']} (mean {f_mean:.2f}°)")
-
-    ax.axhline(w_mean, color=WHOLE_FOV['color'], lw=1.2, alpha=0.8)
-    ax.axhline(f_mean, color=FOV40['color'], lw=1.2, alpha=0.8)
-    ax.axhline(WHOLE_FOV['ref'], color='gray', ls='--', lw=1, label=WHOLE_FOV['ref_label'])
 
     ax.set_xticks(x)
     ax.set_xticklabels([str(s) for s in subjects], fontsize=15)
