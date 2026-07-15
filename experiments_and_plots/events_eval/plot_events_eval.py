@@ -148,15 +148,15 @@ def draw_compare_panel(ax, whole, fov, title, tag):
     print(f"      {FOV40['label']:<22} frame DoD mean = {f_mean:6.2f}°  (n={f_n})")
 
     ax.bar(x - width / 2, w_vals, width, color=WHOLE_FOV['color'],
-           label=f"{WHOLE_FOV['label']} (mean {w_mean:.2f}°)")
+           label=WHOLE_FOV['label'])
     ax.bar(x + width / 2, f_vals, width, color=FOV40['color'],
-           label=f"{FOV40['label']} (mean {f_mean:.2f}°)")
+           label=FOV40['label'])
 
     ax.set_xticks(x)
     ax.set_xticklabels([str(s) for s in subjects], fontsize=15)
     ax.tick_params(axis='y', labelsize=15)
     ax.set_xlabel('Subject', fontsize=17)
-    ax.set_ylabel('Frame DoD [deg]', fontsize=17)
+    ax.set_ylabel('DoD [deg]', fontsize=17)
     ax.grid(True, axis='y', alpha=0.3)
     ax.legend(fontsize=12, loc='lower center', bbox_to_anchor=(0.5, 1.01), ncol=2)
 

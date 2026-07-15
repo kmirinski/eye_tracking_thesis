@@ -182,23 +182,25 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
 
     if fine_tune:
         # Split the held-out subject: calibration portion is pooled into training,
-        # the remainder becomes the evaluation set. ev_eye uses a leakage-free
-        # chronological block split (calib/eval are temporally disjoint); ebveye groups
-        # by label.
-        ft_ratio = gaze_config.fine_tune_ratio
+        # the remainder becomes the evaluation set. The regressor reuses the same
+        # calibration/evaluation split as the single-subject protocol
+        # (single_regressor_eval_ratio), unlike the LSTM which uses fine_tune_ratio.
+        # ev_eye uses a leakage-free chronological block split (calib/eval are temporally
+        # disjoint); ebveye groups by label.
+        eval_ratio = gaze_config.single_regressor_eval_ratio
         if dataset == 'ev_eye':
             pupil_calib, pupil_eval, screen_calib, screen_eval = split_by_time_blocks(
                 pupil_val, screen_val, ts_val,
-                val_ratio=1 - ft_ratio, n_blocks=gaze_config.n_time_blocks,
+                val_ratio=eval_ratio, n_blocks=gaze_config.n_time_blocks,
             )
         else:
             pupil_calib, pupil_eval, screen_calib, screen_eval = split_by_label(
-                pupil_val, screen_val, val_ratio=1 - ft_ratio,
+                pupil_val, screen_val, val_ratio=eval_ratio,
             )
         pupil_train_ft = np.concatenate([pupil_train, pupil_calib])
         screen_train_ft = np.concatenate([screen_train, screen_calib])
         print(f"Fine-tuning: pooled {len(pupil_calib)} calibration frames from subject "
-              f"{val_subject} (~{ft_ratio*100:.0f}%) into training")
+              f"{val_subject} (~{(1 - eval_ratio)*100:.0f}%) into training")
     else:
         pupil_eval, screen_eval = pupil_val, screen_val
 

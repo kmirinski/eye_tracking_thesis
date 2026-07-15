@@ -84,7 +84,7 @@ class TrackingConfig:
 
 @dataclass
 class TemplateTrackingConfig:
-    num_events: int = 20
+    num_events: int = 40
     lambda1: float = 0.8
     lambda2: float = 1.2
     convergence: float = 0.01
@@ -106,9 +106,14 @@ class KDEConfig:
 class GazeConfig:
     # poly_degrees: list = (1, 2, 3, 4, 5, 6, 8, 12, 15)
     poly_degrees: list = (2, 3, 4, 5, 6)
-    train_ratio: float = 0.8
-    val_ratio: float = 0.2
     fine_tune_ratio: float = 0.4         # fraction of held-out subject data used for fine-tuning/calibration
+    # Single-subject within-recording split. The LSTM base-trains on the train fraction,
+    # calibrates (fine-tunes) on the calib fraction, and evaluates on the remainder.
+    single_lstm_train_ratio: float = 0.70
+    single_lstm_calib_ratio: float = 0.15   # eval = 1 - train - calib (0.15)
+    # The regressor has no separate base-training phase: it fits on the calib fraction
+    # and evaluates on the remainder (so calib = 1 - eval).
+    single_regressor_eval_ratio: float = 0.5
     saccade_skip_frames: int = 20
     relabel_diff_threshold: float = 1.5  # px; eye displacement below this = stable fixation
     relabel_max_frames: int = 20         # safety cap: never relabel more than this many frames per label change
@@ -167,12 +172,12 @@ class LSTMConfig:
     dense_units: tuple = (64, 32, 16)
     l1_reg: float = 1e-4
     epochs: int = 150                       # cap only; EarlyStopping ends training earlier
-    batch_size: int = 256                   # sized for GPU throughput (was 32 for CPU)
+    batch_size: int = 32                   # sized for GPU throughput (was 32 for CPU)
     learning_rate: float = 5e-4             # raised with batch size (fewer updates/epoch)
     lr_decay_rate: float = 0.98
     lr_decay_steps: int = 1000
-    early_stop_patience: int = 8            # val_loss bottoms ~epoch 2; 8 confirms minimum without wasting GPU
+    early_stop_patience: int = 20            # val_loss bottoms ~epoch 2; 8 confirms minimum without wasting GPU
     fine_tune_lr: float = 2e-5              # 10× lower than initial LR
     fine_tune_epochs: int = 20              # FT loss plateaus by ~epoch 20; no val monitoring
-    fine_tune_batch_size: int = 64
+    fine_tune_batch_size: int = 16
     freeze_lstm: bool = True                # if True, freeze LSTM layer during fine-tuning

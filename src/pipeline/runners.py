@@ -221,23 +221,25 @@ def run_regressor(pupil_centers, screen_coords, valid_mask, gaze_config: GazeCon
     # is applied only in the cross-subject path (cross_subject_regressor.run_fold), where
     # pooling subjects with differing pupil-coordinate ranges makes z-scoring necessary.
 
+    # Single-subject regressor: fit on the calibration fraction, evaluate on the remainder.
+    eval_ratio = gaze_config.single_regressor_eval_ratio
     if dataset == 'ev_eye' and timestamps is not None:
         pupil_train, pupil_val, screen_train, screen_val = split_by_time_blocks(
             pupil_centers, screen_coords, timestamps,
-            val_ratio=gaze_config.val_ratio, n_blocks=gaze_config.n_time_blocks,
+            val_ratio=eval_ratio, n_blocks=gaze_config.n_time_blocks,
         )
     elif dataset == 'ev_eye':
         pupil_train, pupil_val, screen_train, screen_val = split_randomly(
             pupil_centers, screen_coords,
-            train_ratio=gaze_config.train_ratio, val_ratio=gaze_config.val_ratio,
+            train_ratio=1 - eval_ratio, val_ratio=eval_ratio,
         )
     else:
         pupil_train, pupil_val, screen_train, screen_val = split_by_label(
-            pupil_centers, screen_coords, val_ratio=gaze_config.val_ratio,
+            pupil_centers, screen_coords, val_ratio=eval_ratio,
         )
 
-    print(f"Training set size: {len(pupil_train)}")
-    print(f"Validation set size: {len(pupil_val)}")
+    print(f"Calibration set size: {len(pupil_train)}")
+    print(f"Evaluation set size: {len(pupil_val)}")
 
     normalized = dataset == 'ev_eye'
     clip_bounds = gaze_clip_bounds(gaze_config, normalized)
@@ -344,11 +346,12 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
     eval_split = getattr(opt, 'eval_split', 'blocks')
     clip_bounds = gaze_clip_bounds(gaze_config, normalized)
 
-    # Calibration/evaluation set size is controlled by val_ratio (blocks mode: fraction of time
-    # blocks held out for eval) or train_ratio (within mode). Pass multiple values via
-    # --val_ratio_sweep to sweep the blocks-mode split size; frame-eval DoD per (degree,
-    # val_ratio) is saved to a CSV (see end). Without the flag, the single configured ratio runs.
-    val_ratios = getattr(opt, 'val_ratio_sweep', None) or [gaze_config.val_ratio]
+    # Calibration/evaluation set size is controlled by single_regressor_eval_ratio (blocks mode:
+    # fraction of time blocks held out for eval; within mode: the complementary fraction of each
+    # block's frames calibrates). Pass multiple values via --val_ratio_sweep to sweep the
+    # blocks-mode split size; frame-eval DoD per (degree, ratio) is saved to a CSV (see end).
+    # Without the flag, the single configured ratio runs.
+    val_ratios = getattr(opt, 'val_ratio_sweep', None) or [gaze_config.single_regressor_eval_ratio]
     valratio_rows = []
 
     def _eval_for_val_ratio(eff_val_ratio):
@@ -371,7 +374,7 @@ def run_regressor_events_eval(pupil_centers, screen_coords, valid_mask, gaze_con
                 if len(idx) == 0:
                     continue
                 rng.shuffle(idx)
-                n_tr = int(len(idx) * gaze_config.train_ratio)
+                n_tr = int(len(idx) * (1 - gaze_config.single_regressor_eval_ratio))
                 frame_train[idx[:n_tr]] = True
             frame_eval = ~frame_train
             ev_eval = np.ones(len(ev_ts), dtype=bool)
@@ -561,32 +564,36 @@ def run_lstm(ellipses, screen_coords, valid_mask, gaze_config, opt):
         X, y = X[fov_mask], y[fov_mask]
 
     n = len(X)
-    n_train = int(n * gaze_config.train_ratio)
-    n_val   = int(n * gaze_config.val_ratio)
+    n_train = int(n * gaze_config.single_lstm_train_ratio)
+    n_calib = int(n * gaze_config.single_lstm_calib_ratio)
 
     X_train, y_train = X[:n_train], y[:n_train]
-    X_val, y_val = X[n_train:n_train + n_val], y[n_train:n_train + n_val]
-    X_test, y_test = X[n_train + n_val:], y[n_train + n_val:]
+    X_calib, y_calib = X[n_train:n_train + n_calib], y[n_train:n_train + n_calib]
+    X_eval, y_eval = X[n_train + n_calib:], y[n_train + n_calib:]
 
-    print(f"Training set: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
+    print(f"Training set: {len(X_train)}, Calibration: {len(X_calib)}, Evaluation: {len(X_eval)}")
 
     # Single-subject: feed raw features (input normalization is cross-subject only).
+    # Base-train on the training split (early stopping always monitors the calibration split),
+    # and evaluate on the held-out eval split. With --fine_tune, additionally calibrate
+    # (fine-tune) on the calibration split first; the eval split is identical either way so
+    # the two conditions are directly comparable.
     lstm_estimator = LSTMGazeEstimator(lstm_config, pre_scaled=True)
-    lstm_estimator.fit(X_train, y_train, X_val, y_val)
-
-    eval_X, eval_y = X_val, y_val
+    lstm_estimator.fit(X_train, y_train, X_calib, y_calib)
+    if getattr(opt, 'fine_tune', False):
+        lstm_estimator.fine_tune(X_calib, y_calib)
 
     normalized = getattr(opt, 'dataset', 'ebveye') == 'ev_eye'
-    val_metrics = lstm_estimator.evaluate(eval_X, eval_y)
-    dod_mean, dod_med = angular_dod(lstm_estimator.predict(eval_X), eval_y,
+    val_metrics = lstm_estimator.evaluate(X_eval, y_eval)
+    dod_mean, dod_med = angular_dod(lstm_estimator.predict(X_eval), y_eval,
                                     gaze_config, normalized)
     print(f"Distance Error: mean={val_metrics['mean_error']:.5f}px  "
           f"median={val_metrics['median_error']:.5f}px")
     print(f"DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
 
     if opt.ge_plots:
-        val_pred = lstm_estimator.predict(eval_X)
-        plot_gaze_predictions(val_pred, eval_y, title='LSTM — validation set',
+        val_pred = lstm_estimator.predict(X_eval)
+        plot_gaze_predictions(val_pred, y_eval, title='LSTM — evaluation set',
                               fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config, normalized))
 
 
@@ -603,28 +610,34 @@ def run_lstm_combined(combined_samples, gaze_config, opt):
         X, y = X[fov_mask], y[fov_mask]
 
     n = len(X)
-    n_train = int(n * gaze_config.train_ratio)
-    n_val   = int(n * gaze_config.val_ratio)
+    n_train = int(n * gaze_config.single_lstm_train_ratio)
+    n_calib = int(n * gaze_config.single_lstm_calib_ratio)
 
     X_train, y_train = X[:n_train], y[:n_train]
-    X_val, y_val = X[n_train:n_train + n_val], y[n_train:n_train + n_val]
-    X_test, y_test = X[n_train + n_val:], y[n_train + n_val:]
+    X_calib, y_calib = X[n_train:n_train + n_calib], y[n_train:n_train + n_calib]
+    X_eval, y_eval = X[n_train + n_calib:], y[n_train + n_calib:]
 
-    print(f"Training set: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
+    print(f"Training set: {len(X_train)}, Calibration: {len(X_calib)}, Evaluation: {len(X_eval)}")
 
     # Single-subject: feed raw features (input normalization is cross-subject only).
+    # Base-train on the training split (early stopping always monitors the calibration split),
+    # and evaluate on the held-out eval split. With --fine_tune, additionally calibrate
+    # (fine-tune) on the calibration split first; the eval split is identical either way so
+    # the two conditions are directly comparable.
     lstm_estimator = LSTMGazeEstimator(lstm_config, pre_scaled=True)
-    lstm_estimator.fit(X_train, y_train, X_val, y_val)
+    lstm_estimator.fit(X_train, y_train, X_calib, y_calib)
+    if getattr(opt, 'fine_tune', False):
+        lstm_estimator.fine_tune(X_calib, y_calib)
 
     normalized = getattr(opt, 'dataset', 'ebveye') == 'ev_eye'
-    val_metrics = lstm_estimator.evaluate(X_val, y_val)
-    dod_mean, dod_med = angular_dod(lstm_estimator.predict(X_val), y_val,
+    val_metrics = lstm_estimator.evaluate(X_eval, y_eval)
+    dod_mean, dod_med = angular_dod(lstm_estimator.predict(X_eval), y_eval,
                                     gaze_config, normalized)
     print(f"Distance Error: mean={val_metrics['mean_error']:.5f}px  "
           f"median={val_metrics['median_error']:.5f}px")
     print(f"DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
 
     if opt.ge_plots:
-        val_pred = lstm_estimator.predict(X_val)
-        plot_gaze_predictions(val_pred, y_val, title='LSTM (frame+event) — validation set',
+        val_pred = lstm_estimator.predict(X_eval)
+        plot_gaze_predictions(val_pred, y_eval, title='LSTM (frame+event) — evaluation set',
                               fov_rect=_fov_rect(opt.fov, opt.fov_center, gaze_config, normalized))
