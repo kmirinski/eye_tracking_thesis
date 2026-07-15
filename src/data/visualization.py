@@ -520,6 +520,7 @@ def plot_relabeling_diagnostic(pupil_chron, screen_chron_original, phase_labels,
     ax.legend(handles=legend_handles, loc='upper right', fontsize=14, ncol=2)
     ax.set_xlabel('Frame index', fontsize=20, labelpad=15)
     ax.set_ylabel('x displacement (px)', fontsize=20, labelpad=15)
+    ax.tick_params(axis='both', labelsize=16)
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()

@@ -17,8 +17,6 @@ finetuned evaluated on the held-out eval split).
 import csv
 import os
 
-from pipeline.runners import errors_to_degrees
-
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'results')
 FOLDS_DIR = os.path.join(RESULTS_DIR, 'folds')
 
@@ -27,28 +25,21 @@ CONFIG_FIELDS = [
     'model', 'dataset', 'motion', 'eye', 'val_subject',
     'fine_tune', 'relabel', 'combined', 'degree', 'phase', 'n_eval',
 ]
+# The two reported metrics: Distance Error (px, mean+median) and DoD (angular °,
+# mean+median). See E-Gaze Table II / EV-Eye for the metric definitions.
 METRIC_FIELDS = [
-    'mse', 'rmse', 'mean_error', 'std_error', 'max_error', 'median_error',
-    'mean_error_v', 'mean_error_h', 'median_error_v', 'median_error_h',
-    'h_deg', 'v_deg', 'dod_mean', 'dod_median',
+    'mean_error', 'median_error', 'dod_mean', 'dod_median',
 ]
 FIELDNAMES = CONFIG_FIELDS + METRIC_FIELDS
 
 
 def metrics_row(metrics, gaze_config, normalized):
-    """Flatten a metrics dict into the metric columns, adding per-axis degrees.
+    """Flatten a metrics dict into the metric columns.
 
-    ``metrics`` is the dict returned by ``estimator.evaluate`` augmented with
-    ``dod_mean``/``dod_median``. Per-axis degrees are derived from the pixel
-    errors via :func:`errors_to_degrees` (reused from the runners module) so the
-    CSV is directly readable in degrees.
+    ``metrics`` is the dict returned by ``estimator.evaluate`` (Distance Error)
+    augmented with ``dod_mean``/``dod_median``.
     """
-    v_deg, h_deg = errors_to_degrees(
-        metrics['mean_error_v'], metrics['mean_error_h'], gaze_config, normalized)
-    row = {k: float(metrics[k]) for k in METRIC_FIELDS if k in metrics}
-    row['h_deg'] = float(h_deg)
-    row['v_deg'] = float(v_deg)
-    return row
+    return {k: float(metrics[k]) for k in METRIC_FIELDS if k in metrics}
 
 
 def fold_filename(model, dataset, motion, eye, val_subject,

@@ -22,7 +22,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # --- make src/ importable (same layout main.py relies on) --------------------------
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = os.path.join(REPO_ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
@@ -45,7 +45,45 @@ DATA_DIR = os.path.join(REPO_ROOT, "eye_data",
 TEMPLATE_FRAME = 186
 OUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "event_matching_figure.png")
+GAZE_AXES_OUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "gaze_axes_figure.png")
 # ----------------------------------------------------------------------------------
+
+
+def make_gaze_axes_figure(gray, center, gamma_bar, vis_cols, vis_rows,
+                          vis_pos_mask, vis_neg_mask, out_path):
+    """Near-eye frame + events with a 3D coordinate triad and a gaze-direction arrow
+    anchored at the pupil center (no lambda circles)."""
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.imshow(gray, cmap="gray")
+    ax.scatter(vis_cols[vis_neg_mask], vis_rows[vis_neg_mask], s=14, c="red",
+               edgecolors="none", zorder=2)
+    ax.scatter(vis_cols[vis_pos_mask], vis_rows[vis_pos_mask], s=14, c="green",
+               edgecolors="none", zorder=2)
+
+    cx, cy = float(center[0]), float(center[1])
+    L = 2.8 * gamma_bar          # axis length
+    # 2D screen directions of the projected 3D axes (image y points down), chosen to
+    # match the reference: green = up, blue = right, red = down-left, magenta = gaze.
+    arrows = [
+        ((0.00, -1.00), L,        "#22dd22"),   # Y axis  (up)    green
+        ((1.00,  0.14), L,        "#2a6dff"),   # X axis  (right) blue
+        ((-0.55, 0.84), L,        "#ff2a2a"),   # Z axis  (depth) red
+        ((-0.72, -0.62), 0.82 * L, "#ff2ad4"),  # gaze direction  magenta
+    ]
+    for (ux, uy), length, color in arrows:
+        ax.annotate("", xy=(cx + ux * length, cy + uy * length), xytext=(cx, cy),
+                    arrowprops=dict(arrowstyle="-|>", color=color, lw=3.5,
+                                    mutation_scale=26, shrinkA=0, shrinkB=0),
+                    zorder=10)
+
+    pad_x, pad_y = 6.0 * gamma_bar, 5.0 * gamma_bar
+    ax.set_xlim(cx - pad_x, cx + pad_x)
+    ax.set_ylim(cy + pad_y, cy - pad_y)
+    ax.axis("off")
+    fig.savefig(out_path, dpi=300, bbox_inches="tight", pad_inches=0)
+    plt.close(fig)
+    print(f"Saved figure to {out_path}")
 
 def load_pipeline_state():
     """Load one subject/eye and run the early pipeline stages."""
@@ -154,6 +192,10 @@ def main():
     img = cv2.imread(frame_list_chron[t_idx].img)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
 
+    # Separate figure: frame + events with the gaze coordinate triad (no lambda circles).
+    make_gaze_axes_figure(gray, center, gamma_bar, vis_cols, vis_rows,
+                          vis_pos_mask, vis_neg_mask, GAZE_AXES_OUT_PATH)
+
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     
     # (a) candidate subset over the near-eye frame
@@ -239,8 +281,8 @@ def main():
         ax.tick_params(axis='x', pad=12) # Pushes X ticks down, clearing Y ticks
         ax.tick_params(axis='y', pad=4)  # standard spacing for Y ticks
         
-        ax.set_xlabel('$\mathbf{x}$', fontsize=16, labelpad=8)
-        ax.set_ylabel('$\mathbf{y}$', fontsize=16, labelpad=8)
+        ax.set_xlabel(r'$\mathbf{x}$', fontsize=16, labelpad=8)
+        ax.set_ylabel(r'$\mathbf{y}$', fontsize=16, labelpad=8)
         
         for spine in ax.spines.values():
             spine.set_linewidth(2)

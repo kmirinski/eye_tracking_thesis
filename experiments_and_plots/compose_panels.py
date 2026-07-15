@@ -21,15 +21,18 @@ fig, axes = plt.subplots(2, 3, figsize=(15, 8), dpi=200)
 plt.subplots_adjust(left=0.01, right=0.99, top=0.99, bottom=0.05,
                     wspace=0.05, hspace=0.28)
 
+BORDER_PX = 10  # thickness of the black boundary drawn on each image
+
 for ax, (fname, caption) in zip(axes.flat, panels):
     img = cv2.imread(os.path.join(PANEL_DIR, fname))
+    # small black boundary drawn directly onto the image pixels
+    img = cv2.copyMakeBorder(
+        img, BORDER_PX, BORDER_PX, BORDER_PX, BORDER_PX,
+        cv2.BORDER_CONSTANT, value=(0, 0, 0),
+    )
     ax.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    # black outline around each image (keep frame, hide ticks)
     ax.set_xticks([]); ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-        spine.set_color('black')
-        spine.set_linewidth(1.5)
+    ax.set_axis_off()
     ax.text(0.5, -0.07, caption, transform=ax.transAxes,
             ha='center', va='top', fontsize=26)
 

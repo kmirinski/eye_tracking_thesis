@@ -22,11 +22,13 @@ parser.add_argument('--frame_only', action='store_true',
 parser.add_argument('--events_eval', action='store_true',
                     help='regressor: calibrate on frame centers, then evaluate gaze DoD on the '
                          'high-frequency event-tracked centers (high-frequency gaze protocol)')
-parser.add_argument('--eval_split', default='blocks', choices=['blocks', 'within'],
+parser.add_argument('--eval_split', default='blocks', choices=['blocks', 'within', 'parity'],
                     help='regressor --events_eval split protocol: "blocks" assigns whole time '
                          'blocks to calibration vs eval (leakage-free); "within" takes train_ratio '
                          'of frames from every block to calibrate and evaluates on the remaining '
-                         'frames from each block plus all events')
+                         'frames from each block plus all events; "parity" calibrates on the '
+                         'odd-positioned frames (chronological order) and evaluates on the rest '
+                         'plus all events (fixed 50/50, ignores val_ratio)')
 parser.add_argument('--good_anchor_thresh', type=float, nargs='+', default=[5.0],
                     help='events_eval: anchor-residual threshold(s) in degrees defining the '
                          '"GOOD frames" event subset. Pass multiple values to sweep, e.g. '

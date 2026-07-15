@@ -22,7 +22,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import (CROSS_SUBJECT_SUBJECTS, GazeConfig, TemplateTrackingConfig,
+from config import (CROSS_SUBJECT_SUBJECTS, TemplateTrackingConfig,
                     get_frame_detection_config, get_gaze_config)
 from data.loaders import EyeDataset, EvEyeDataset
 from data.visualization import plot_gaze_predictions
@@ -36,7 +36,7 @@ from pipeline.pipeline import (
     template_tracking_stage,
 )
 from pipeline.runners import (fov_filter_mask, _fov_rect, split_by_label, split_by_time_blocks,
-                              errors_to_degrees, angular_dod, gaze_clip_bounds)
+                              angular_dod, gaze_clip_bounds)
 from processing.normalization import compute_pupil_stats, normalize_pupils
 from results_io import fold_filename, metrics_row, save_fold, save_accumulated
 
@@ -63,7 +63,7 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
 
     print(f"Subject {subject}: preprocessing...")
     frame_config = get_frame_detection_config(subject, eye, dataset=dataset)
-    gaze_config = get_gaze_config(subject)
+    gaze_config = get_gaze_config(subject, dataset)
 
     if dataset == 'ev_eye':
         eye_dataset = EvEyeDataset(
@@ -129,7 +129,8 @@ def load_subject_data(subject, data_dir, eye, relabel, fov, fov_center,
         print(f"  Added {valid_ev.sum()} event ellipses → total samples: {len(pupil_centers)}")
 
     if fov is not None:
-        fov_mask = fov_filter_mask(screen_coords, fov[0], fov[1], gaze_config, center=fov_center)
+        fov_mask = fov_filter_mask(screen_coords, fov[0], fov[1], gaze_config,
+                                   center=fov_center, normalized=dataset == 'ev_eye')
         pupil_centers = pupil_centers[fov_mask]
         screen_coords = screen_coords[fov_mask]
         timestamps = timestamps[fov_mask]
@@ -154,7 +155,7 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
     calibration gain is directly comparable. Without fine_tune, only a baseline
     is evaluated, on the whole validation subject.
     """
-    gaze_config = GazeConfig()
+    gaze_config = get_gaze_config(val_subject, dataset)
     normalized = (dataset == 'ev_eye')
 
     # Compute per-subject normalization stats from raw pupils
@@ -181,23 +182,25 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
 
     if fine_tune:
         # Split the held-out subject: calibration portion is pooled into training,
-        # the remainder becomes the evaluation set. ev_eye uses a leakage-free
-        # chronological block split (calib/eval are temporally disjoint); ebveye groups
-        # by label.
-        ft_ratio = gaze_config.fine_tune_ratio
+        # the remainder becomes the evaluation set. The regressor reuses the same
+        # calibration/evaluation split as the single-subject protocol
+        # (single_regressor_eval_ratio), unlike the LSTM which uses fine_tune_ratio.
+        # ev_eye uses a leakage-free chronological block split (calib/eval are temporally
+        # disjoint); ebveye groups by label.
+        eval_ratio = gaze_config.single_regressor_eval_ratio
         if dataset == 'ev_eye':
             pupil_calib, pupil_eval, screen_calib, screen_eval = split_by_time_blocks(
                 pupil_val, screen_val, ts_val,
-                val_ratio=1 - ft_ratio, n_blocks=gaze_config.n_time_blocks,
+                val_ratio=eval_ratio, n_blocks=gaze_config.n_time_blocks,
             )
         else:
             pupil_calib, pupil_eval, screen_calib, screen_eval = split_by_label(
-                pupil_val, screen_val, val_ratio=1 - ft_ratio,
+                pupil_val, screen_val, val_ratio=eval_ratio,
             )
         pupil_train_ft = np.concatenate([pupil_train, pupil_calib])
         screen_train_ft = np.concatenate([screen_train, screen_calib])
         print(f"Fine-tuning: pooled {len(pupil_calib)} calibration frames from subject "
-              f"{val_subject} (~{ft_ratio*100:.0f}%) into training")
+              f"{val_subject} (~{(1 - eval_ratio)*100:.0f}%) into training")
     else:
         pupil_eval, screen_eval = pupil_val, screen_val
 
@@ -212,11 +215,8 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
                                         gaze_config, normalized=normalized)
         m['dod_mean'] = dod_mean
         m['dod_median'] = dod_med
-        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
-                                         gaze_config, normalized=normalized)
-        print(f"  [{phase}] mse={m['mse']:.5f}px²  mean={m['mean_error']:.5f}px  "
-              f"rmse={m['rmse']:.5f}px  median={m['median_error']:.5f}px")
-        print(f"    per-axis: h={h_deg:.2f}°  v={v_deg:.2f}°  |  DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
+        print(f"  [{phase}] Distance Error: mean={m['mean_error']:.5f}px  "
+              f"median={m['median_error']:.5f}px  |  DoD: mean={dod_mean:.2f}°  median={dod_med:.2f}°")
         row = {
             'model': 'regressor', 'dataset': dataset, 'motion': motion, 'eye': eye,
             'val_subject': val_subject, 'fine_tune': int(fine_tune), 'relabel': int(relabel),
@@ -248,7 +248,7 @@ def run_fold(val_subject, subject_data, ge_plots, fov, fov_center,
             plot_gaze_predictions(
                 val_pred, screen_eval,
                 title=f'Subject {val_subject} — Degree {deg}',
-                fov_rect=_fov_rect(fov, fov_center, gaze_config),
+                fov_rect=_fov_rect(fov, fov_center, gaze_config, normalized),
             )
 
     save_fold(csv_rows, fold_filename('regressor', dataset, motion, eye, val_subject,
@@ -310,23 +310,15 @@ def run(opt):
     print("=" * 60)
     print("Summary (best degree per fold)")
     print("=" * 60)
-    gaze_config = GazeConfig()
-    normalized = (dataset == 'ev_eye')
-    h_degs, v_degs, dods = [], [], []
+    dods = []
     for s in subjects:
         m = all_results[s]
-        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
-                                         gaze_config, normalized=normalized)
-        h_degs.append(h_deg)
-        v_degs.append(v_deg)
         dods.append(m['dod_mean'])
-        print(f"  {s:>3}: mean={m['mean_error']:.5f}px  rmse={m['rmse']:.5f}px  "
-              f"median={m['median_error']:.5f}px  std={m['std_error']:.5f}px  "
-              f"| h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={m['dod_mean']:.2f}°")
+        print(f"  {s:>3}: Distance Error mean={m['mean_error']:.5f}px  "
+              f"median={m['median_error']:.5f}px  |  DoD={m['dod_mean']:.2f}°")
     mean_errors = [all_results[s]['mean_error'] for s in subjects]
-    print(f"\nOverall mean error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
-    print(f"Overall per-axis: horizontal {np.mean(h_degs):.2f} ± {np.std(h_degs):.2f}°  |  "
-          f"vertical {np.mean(v_degs):.2f} ± {np.std(v_degs):.2f}°")
+    print(f"\nOverall Distance Error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
+    print(f"Overall DoD: {np.mean(dods):.2f} ± {np.std(dods):.2f}°")
     print(f"Overall DoD: {np.mean(dods):.2f} ± {np.std(dods):.2f}°")
 
     # Accumulate every fold of this LOO run into one self-contained CSV at the

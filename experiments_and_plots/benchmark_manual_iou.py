@@ -31,6 +31,8 @@ Run from the repo root:
 import os, sys, csv, json, glob, math, argparse, collections
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 sys.path.append("src")
 from data.loaders import Frame, glob_imgs
@@ -208,6 +210,105 @@ def track_center_through_events(events, t0, t1, init_ellipse, config):
     return center, n_updates
 
 
+REF_COLORS = ["tab:red", "tab:purple"]   # one per reference, shared across panels
+
+
+def draw_metric_violin(ax, data, labels, ylabel, refs=(), ylim=None,
+                       show_xticklabels=True):
+    """
+    Draw a per-frame metric violin plot onto ``ax``: a green "All" violin pooling
+    every subject, followed by one blue violin per subject (sorted, labeled with their
+    real subject IDs). Short cap lines mark the min and max of each violin, and each
+    entry in ``refs`` (label, value) is drawn as a dashed horizontal reference line.
+    """
+    palette = ["tab:green"] + ["#6ba3d6"] * (len(data) - 1)
+    sns.violinplot(data=data, ax=ax, palette=palette, inner="box",
+                   linewidth=1.0, cut=0, density_norm="width")
+    # Short horizontal caps at the min and max of each violin.
+    for x, arr in enumerate(data):
+        if len(arr):
+            ax.hlines([arr.min(), arr.max()], x - 0.15, x + 0.15,
+                      color="black", lw=1.0)
+    # Paper reference means as dashed lines (labels handled by the shared legend).
+    for (name, val), c in zip(refs, REF_COLORS):
+        ax.axhline(val, ls="--", lw=1.6, color=c)
+
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels if show_xticklabels else [], fontsize=15)
+    ax.tick_params(axis="y", labelsize=15)
+    ax.set_ylabel(ylabel, fontsize=17)
+    if ylim:
+        ax.set_ylim(*ylim)
+
+
+def plot_all_metrics(records, pe_records, out_path):
+    """Stack one violin plot per metric (IoU, F1, PE) into a single figure."""
+    keys = sorted(records)                       # (subject, eye) sorted by subject
+    labels = ["All"] + [str(k[0]) for k in keys]
+
+    def with_all(per):
+        allv = np.concatenate(per) if per else np.array([])
+        return [allv] + per
+
+    iou = with_all([np.array([r[0] for r in records[k]]) for k in keys])
+    f1 = with_all([np.array([r[1] for r in records[k]]) for k in keys])
+    pe = with_all([np.array(pe_records[k], dtype=float) for k in keys])
+
+    fig, axes = plt.subplots(
+        3, 1, sharex=True, figsize=(max(8, 0.55 * len(labels) + 2), 8.4),
+        gridspec_kw=dict(hspace=0.2))
+    draw_metric_violin(axes[0], iou, labels, "IoU score",
+                       refs=[("EV-Eye U-Net", 0.9187), ("Angelopoulos model", 0.8360)],
+                       ylim=(0.6, 1.0), show_xticklabels=False)
+    draw_metric_violin(axes[1], f1, labels, "F1 score",
+                       refs=[("EV-Eye U-Net", 0.9560), ("Angelopoulos model", 0.9075)],
+                       ylim=(0.75, 1.0), show_xticklabels=False)
+    draw_metric_violin(axes[2], pe, labels, "Pixel error (px)",
+                       refs=[("EV-Eye U-Net", 0.64), ("Angelopoulos model", 1.30)],
+                       ylim=(0, 5), show_xticklabels=True)
+    axes[2].set_xlabel("Subject", fontsize=17)
+    fig.align_ylabels(axes)
+
+    # Single shared legend (reference names only; values are reported in the paper).
+    ref_names = ["EV-Eye U-Net", "Angelopoulos model"]
+    handles = [plt.Line2D([], [], ls="--", lw=1.6, color=c)
+               for c in REF_COLORS[:len(ref_names)]]
+    fig.legend(handles, ref_names, fontsize=12, ncol=len(ref_names),
+               loc="upper center", bbox_to_anchor=(0.5, 0.93), framealpha=0.9)
+
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"Saved violin plot to {out_path}")
+
+
+def plot_event_pe(ev_pe_records, out_path):
+    """Violin plot of the event-based tracking pixel error per subject.
+
+    Only PE is shown: during event tracking we follow the pupil *center* through the
+    event stream and have no per-event ground truth of the pupil geometry (no mask, so
+    no IoU/F1). The dashed lines are the EV-Eye paper's event-tracking references,
+    averaged over subjects: matching-based 1.2 px, model-based 7.7 px.
+    """
+    keys = sorted(ev_pe_records)
+    per = [np.array(ev_pe_records[k], dtype=float) for k in keys]
+    labels = ["All"] + [str(k[0]) for k in keys]
+    allv = np.concatenate(per) if per else np.array([])
+    data = [allv] + per
+
+    refs = [("EV-Eye matching-based", 1.2), ("Angelopoulos model", 7.7)]
+    fig, ax = plt.subplots(figsize=(max(8, 0.55 * len(labels) + 2), 3.4))
+    draw_metric_violin(ax, data, labels, "Pixel error (px)", refs=refs,
+                       ylim=(0, 10), show_xticklabels=True)
+    ax.set_xlabel("Subject", fontsize=17)
+
+    handles = [plt.Line2D([], [], ls="--", lw=1.6, color=c)
+               for c in REF_COLORS[:len(refs)]]
+    fig.legend(handles, [r[0] for r in refs], fontsize=12, ncol=len(refs),
+               loc="upper center", bbox_to_anchor=(0.5, 1.02), framealpha=0.9)
+
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"Saved violin plot to {out_path}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -215,6 +316,10 @@ def main():
                     help="run only the frame-based segmentation benchmark")
     ap.add_argument("--no-event-filter", action="store_true",
                     help="disable the residual/drift outlier filter in event tracking")
+    ap.add_argument("--violin-plot", nargs="?", const="pupil_violin.png",
+                    metavar="PATH", default=None,
+                    help="save a single figure stacking per-subject violin plots of "
+                         "frame IoU/F1/PE (default path: pupil_violin.png)")
     args = ap.parse_args()
 
     tt_config = TemplateTrackingConfig()
@@ -378,6 +483,12 @@ def main():
     print(f" |       |   7.70" if not args.skip_events else "")
     if not args.skip_events:
         print("  (frame cols: IoU/F1/PE  •  event col: PE px — matching-based vs model-based)")
+
+    if args.violin_plot is not None:
+        plot_all_metrics(records, pe_records, args.violin_plot)
+        if not args.skip_events and ev_pe_records:
+            root, ext = os.path.splitext(args.violin_plot)
+            plot_event_pe(ev_pe_records, f"{root}_events{ext}")
 
 
 if __name__ == "__main__":

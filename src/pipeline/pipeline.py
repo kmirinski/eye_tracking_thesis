@@ -430,7 +430,7 @@ def run_pipeline(opt):
     dataset = getattr(opt, 'dataset', 'ebveye')
     motion = getattr(opt, 'motion',  'saccadic')
     frame_config = get_frame_detection_config(opt.subject, opt.eye, dataset)
-    gaze_config = get_gaze_config(opt.subject)
+    gaze_config = get_gaze_config(opt.subject, dataset)
 
     print(f'Collecting data of the {opt.eye} eye of subject {opt.subject}')
     print('Loading data from ' + opt.data_dir)

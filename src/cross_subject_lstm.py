@@ -22,7 +22,7 @@ from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import (CROSS_SUBJECT_SUBJECTS, GazeConfig, LSTMConfig, TemplateTrackingConfig,
+from config import (CROSS_SUBJECT_SUBJECTS, LSTMConfig, TemplateTrackingConfig,
                     get_frame_detection_config, get_gaze_config)
 from data.loaders import EyeDataset, EvEyeDataset
 from data.visualization import plot_gaze_predictions, plot_training_history
@@ -31,24 +31,10 @@ from pipeline.pipeline import (
     build_valid_mask, label_events_from_tobii, merge_frame_event_samples, noise_flagging_stage,
     pupil_extraction_stage, relabeling_stage, template_tracking_stage,
 )
-from pipeline.runners import fov_filter_mask, errors_to_degrees, angular_dod
+from pipeline.runners import fov_filter_mask, angular_dod, _fov_rect
 from results_io import fold_filename, metrics_row, save_fold
 
 CACHE_DIR  = os.path.join(os.path.dirname(__file__), '..', 'data_cache')
-
-
-def _fov_rect(fov, fov_center):
-    gaze_config = GazeConfig()
-    px_per_deg_x = gaze_config.screen_width_px / gaze_config.screen_fov_x_deg
-    px_per_deg_y = gaze_config.screen_height_px / gaze_config.screen_fov_y_deg
-    half_w = (fov[0] / 2) * px_per_deg_x
-    half_h = (fov[1] / 2) * px_per_deg_y
-    if fov_center is None:
-        cr = gaze_config.screen_height_px / 2
-        cc = gaze_config.screen_width_px / 2
-    else:
-        cr, cc = fov_center
-    return (cr - half_h, cr + half_h, cc - half_w, cc + half_w)
 
 
 def load_subject_data(subject, data_dir, fov, fov_center,
@@ -67,7 +53,7 @@ def load_subject_data(subject, data_dir, fov, fov_center,
 
     print(f"  Subject {subject}: preprocessing...")
     frame_config = get_frame_detection_config(subject, eye, dataset=dataset)
-    gaze_config  = get_gaze_config(subject)
+    gaze_config  = get_gaze_config(subject, dataset)
     lstm_config  = LSTMConfig()
 
     if dataset == 'ev_eye':
@@ -110,7 +96,8 @@ def load_subject_data(subject, data_dir, fov, fov_center,
         X, y = build_lstm_sequences(ellipses, sc, valid_mask, seq_len=lstm_config.seq_len)
 
     if fov is not None:
-        fov_mask = fov_filter_mask(y, fov[0], fov[1], gaze_config, center=fov_center)
+        fov_mask = fov_filter_mask(y, fov[0], fov[1], gaze_config,
+                                   center=fov_center, normalized=dataset == 'ev_eye')
         X, y = X[fov_mask], y[fov_mask]
 
     n, s, f = X.shape
@@ -154,7 +141,7 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
         plot_training_history(estimator.history, title=f'LSTM training — val subject {val_subject}')
 
     normalized = (dataset == 'ev_eye')
-    gaze_config = GazeConfig()
+    gaze_config = get_gaze_config(val_subject, dataset)
     csv_rows = []
 
     def _eval(X, y, phase):
@@ -163,10 +150,8 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
         dod_mean, dod_med = angular_dod(estimator.predict(X), y, gaze_config, normalized=normalized)
         m['dod_mean'] = dod_mean
         m['dod_median'] = dod_med
-        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
-                                         gaze_config, normalized=normalized)
-        print(f"Subject {val_subject} {phase} — mse={m['mse']:.5f}px²  mean={m['mean_error']:.5f}px  "
-              f"rmse={m['rmse']:.5f}px  | h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={dod_mean:.2f}°")
+        print(f"Subject {val_subject} {phase} — Distance Error: mean={m['mean_error']:.5f}px  "
+              f"median={m['median_error']:.5f}px  |  DoD={dod_mean:.2f}°")
         row = {
             'model': 'lstm', 'dataset': dataset, 'motion': motion, 'eye': eye,
             'val_subject': val_subject, 'fine_tune': int(fine_tune), 'relabel': int(relabel),
@@ -222,7 +207,7 @@ def run_fold(val_subject, subjects, data_dir, ge_plots, fov, fov_center,
         plot_gaze_predictions(
             eval_pred, y_eval,
             title=f'LSTM — Subject {val_subject}',
-            fov_rect=_fov_rect(fov, fov_center),
+            fov_rect=_fov_rect(fov, fov_center, gaze_config, normalized),
         )
 
     return metrics
@@ -272,23 +257,14 @@ def main(data_dir, val_subject, ge_plots, fov, fov_center,
     print("=" * 60)
     print("Summary")
     print("=" * 60)
-    gaze_config = GazeConfig()
-    normalized = (dataset == 'ev_eye')
-    h_degs, v_degs, dods = [], [], []
+    dods = []
     for s in subjects:
         m = results[s]
-        v_deg, h_deg = errors_to_degrees(m['mean_error_v'], m['mean_error_h'],
-                                         gaze_config, normalized=normalized)
-        h_degs.append(h_deg)
-        v_degs.append(v_deg)
         dods.append(m['dod_mean'])
-        print(f"  {s:>3}: mean={m['mean_error']:.5f}px  rmse={m['rmse']:.5f}px  "
-              f"median={m['median_error']:.5f}px  std={m['std_error']:.5f}px  "
-              f"| h={h_deg:.2f}°  v={v_deg:.2f}°  DoD={m['dod_mean']:.2f}°")
+        print(f"  {s:>3}: Distance Error mean={m['mean_error']:.5f}px  "
+              f"median={m['median_error']:.5f}px  |  DoD={m['dod_mean']:.2f}°")
     mean_errors = [results[s]['mean_error'] for s in subjects]
-    print(f"\nOverall mean error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
-    print(f"Overall per-axis: horizontal {np.mean(h_degs):.2f} ± {np.std(h_degs):.2f}°  |  "
-          f"vertical {np.mean(v_degs):.2f} ± {np.std(v_degs):.2f}°")
+    print(f"\nOverall Distance Error: {np.mean(mean_errors):.5f} ± {np.std(mean_errors):.5f} px")
     print(f"Overall DoD: {np.mean(dods):.2f} ± {np.std(dods):.2f}°")
 
 
